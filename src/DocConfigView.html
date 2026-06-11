@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      background-color: #f8f9fa;
+      color: #3c4043;
+      overflow: hidden;
+    }
+
+    .modal-wrapper {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .wizard-header {
+      background: #ffffff;
+      padding: 16px 24px;
+      border-bottom: 1px solid #dadce0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .wizard-title-display {
+      font-size: 15px;
+      font-weight: bold;
+      color: #1a73e8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .progress-dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: #dadce0;
+      border-radius: 50%;
+    }
+
+    .dot.active {
+      background: #1a73e8;
+    }
+
+    .dot.disabled {
+      background: #f1f3f4;
+      border: 1px dashed #dadce0;
+      opacity: 0.5;
+    }
+
+    .wizard-content {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      box-sizing: border-box;
+      background-color: #f8f9fa;
+    }
+
+    .step-panel {
+      display: none;
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(60, 64, 67, 0.1);
+      min-height: 240px;
+    }
+
+    .step-panel.active[data-visible="true"] {
+      display: block !important;
+    }
+
+    .instruction-text {
+      font-size: 13px;
+      color: #5f6368;
+      margin-top: 0;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .input-field-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"],
+    select,
+    textarea {
+      padding: 10px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #3c4043;
+      min-height: 38px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+
+    .mapping-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .mapping-table th {
+      background: #f1f3f4;
+      text-align: left;
+      padding: 10px;
+      font-weight: bold;
+      border: 1px solid #dadce0;
+    }
+
+    .mapping-table td {
+      padding: 10px;
+      border: 1px solid #dadce0;
+      vertical-align: middle;
+    }
+
+    .mismatch-span {
+      color: #d93025;
+      font-weight: bold;
+      margin-left: 6px;
+    }
+
+    .alert-box {
+      color: #d93025;
+      background: #fce8e6;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-size: 12px;
+      display: none;
+      font-weight: 500;
+    }
+
+    .error-box {
+      color: #d93025;
+      background: #fce8e6;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-size: 12px;
+      display: none;
+      font-weight: 500;
+      border-left: 4px solid #d93025;
+    }
+
+    .tag-chip {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1a73e8;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 11px;
+      margin: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      border: 1px solid #cbf0f8;
+    }
+
+    .tag-chip:hover {
+      background: #d2e3fc;
+    }
+
+    .tag-instruction-red {
+      color: #d93025;
+      font-size: 12px;
+      font-weight: bold;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      padding: 6px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .editor-btn {
+      background: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 3px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      min-width: 28px;
+      height: 26px;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .editor-btn:hover {
+      background: #e8f0fe;
+      border-color: #1a73e8;
+    }
+
+    .editor-canvas {
+      width: 100%;
+      box-sizing: border-box;
+      height: 180px;
+      border: 1px solid #dadce0;
+      border-radius: 0 0 4px 4px;
+      padding: 10px;
+      background: #ffffff;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .attachment-box {
+      border: 1px dashed #dadce0;
+      padding: 10px;
+      border-radius: 4px;
+      background: #f8f9fa;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .attachment-list {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 11px;
+      color: #137333;
+    }
+
+    .wizard-footer {
+      background: #ffffff;
+      padding: 16px 24px;
+      border-top: 1px solid #dadce0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .nav-btn-deck {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-gray {
+      background-color: #f1f3f4 !important;
+      color: #3c4043 !important;
+      border: 1px solid #dadce0 !important;
+    }
+
+    .btn-gray:hover {
+      background-color: #e8eaed !important;
+    }
+
+    button.blue,
+    #nextBtn {
+      background-color: #1a73e8 !important;
+      color: #ffffff !important;
+      border: 1px solid #155cb4 !important;
+      min-height: 38px;
+      padding: 0 16px;
+      font-size: 13px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #nextBtn,
+    #saveBtn,
+    #backBtn {
+      display: inline-block !important;
+    }
+
+    #backBtn {
+      color: #ffffff !important;
+      background-color: #5f6368 !important;
+    }
+
+    #saveBtn {
+      background-color: #137333 !important;
+      color: #ffffff !important;
+      border: 1px solid #0f5d29 !important;
+    }
+
+    .type-option {
+      display: inline-block;
+      margin-right: 20px;
+      padding: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #ffffff;
+    }
+
+    .type-option.selected {
+      background: #e8f0fe;
+      border-color: #1a73e8;
+    }
+
+    .field-row {
+      margin-bottom: 12px;
+    }
+
+    .field-row label {
+      display: block;
+      font-weight: bold;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #5f6368;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="modal-wrapper">
+    <div class="wizard-header">
+      <div class="wizard-title-display" id="wizardTitleDisplay">STEP 1 - TEMPLATE NAME & TYPE</div>
+      <div class="progress-dots" id="progressDotsContainer"></div>
+    </div>
+    <div class="wizard-content">
+      <div class="step-panel active" id="panelStep1" data-visible="true">
+        <p class="instruction-text">Give your template a unique name and choose what it should do.</p>
+        <input type="text" id="templateName" placeholder="e.g., Invoice Generator, Customer Email">
+        <div id="templateNameError" class="error-box" style="display:none; margin-top:10px;">❌ Template name already
+          exists. Please choose a unique layout name.</div>
+        <div style="margin-top: 20px;">
+          <label style="font-weight: bold;">Template Type:</label>
+          <div style="margin-top: 10px;">
+            <div class="type-option" id="typePDFOnly" onclick="selectTemplateType('PDF_ONLY')"><input type="radio" name="templateType" value="PDF_ONLY" id="radioPDF"> 📄
+              <strong>PDF Only</strong><br><span style="font-size: 11px; color: #5f6368;">Generate documents only</span>
+            </div>
+            <div class="type-option" id="typeEmailOnly" onclick="selectTemplateType('EMAIL_ONLY')"><input type="radio" name="templateType" value="EMAIL_ONLY" id="radioEmail"> ✉️
+              <strong>Email Only</strong><br><span style="font-size: 11px; color: #5f6368;">Send emails only</span>
+            </div>
+            <div class="type-option" id="typeBoth" onclick="selectTemplateType('BOTH')"><input type="radio" name="templateType" value="BOTH" id="radioBoth"> 🔄
+              <strong>PDF & Email</strong><br><span style="font-size: 11px; color: #5f6368;">Generate documents AND send emails</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep2" data-visible="true" data-pdf-step="true">
+        <p class="instruction-text">Select a Google Document to use as your template.</p>
+        <div class="input-field-row">
+          <input type="text" id="docTemplateUrl" placeholder="No document selected..." style="flex:1; background-color:#f1f3f4; font-weight: bold;" readonly><button type="button" class="blue" id="pickerLaunchBtn" onclick="launchNativeGoogleDrivePicker('DOCS')">📂 Browse Google Drive</button>
+        </div>
+        <div id="fileSelectionMetaDisplay" style="font-size:12px; font-weight:bold; color:#137333; margin-top:8px;">
+          Click Browse to select a template</div>
+      </div>
+
+      <div class="step-panel" id="panelStep3" data-visible="true" data-pdf-step="true">
+        <p class="instruction-text">Review tags found in your document and map them to spreadsheet columns.</p>
+        <div id="mismatchWarning" class="alert-box">⚠️ Please map all tags before proceeding.</div>
+        <div id="noTagsWarning" class="error-box">❌ No tags found in document template!</div>
+        <table class="mapping-table">
+          <thead>
+            <tr>
+              <th>Tag in Document</th>
+              <th>Map to Column</th>
+            </tr>
+          </thead>
+          <tbody id="tagMappingBody">
+            <tr>
+              <td colspan="2" style="text-align:center; padding:20px;">Select a template first<\ /td>
+                  <\ /tr>
+                    <\ /tbody>
+        </table>
+      </div>
+
+      <div class="step-panel" id="panelStep4" data-visible="true" data-pdf-step="true">
+        <p class="instruction-text">Choose the output format for generated documents.</p>
+        <div>
+          <input type="radio" id="fmtPdf" name="fileFormat" value="PDF" checked><label for="fmtPdf" style="margin-left:5px; margin-right:20px;">🔒 PDF Document</label><input type="radio" id="fmtDoc" name="fileFormat" value="DOC"><label for="fmtDoc" style="margin-left:5px;">✏️ Editable Google Doc</label>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep5" data-visible="true" data-pdf-step="true">
+        <p class="instruction-text">Build filename pattern using tags. Click on tags below to insert.</p>
+        <div id="fileNameError" class="error-box" style="display:none;"></div>
+        <input type="text" id="fileNamePattern" placeholder="e.g., Invoice-{Customer Name}">
+        <div style="margin-top: 15px;">
+          <span class="tag-instruction-red">List of available tags you can use:</span>
+          <div id="fileNameTagsContainer"></div>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep6" data-visible="true" data-pdf-step="true">
+        <p class="instruction-text">Select folder where generated documents will be saved.</p>
+        <div id="folderError" class="error-box" style="display:none;">❌ Please select a destination folder</div>
+        <div class="input-field-row">
+          <input type="text" id="targetFolderInput" placeholder="No folder selected..." style="flex:1;" readonly><button type="button" class="blue" onclick="launchNativeGoogleDrivePicker('FOLDERS')">📂 Select Folder</button>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep7" data-visible="true" data-email-step="true">
+        <p class="instruction-text">Configure your email template. Click on the fields and use the tags list below to
+          insert them into your Subject or Email Body.</p>
+        <div id="emailConfigError" class="error-box" style="display:none;"></div>
+        <div class="field-row"><label>To:</label><input type="text" id="emailTo" value="{Recipient Email}" style="background:#f1f3f4;">
+        </div>
+        <div class="field-row"><label>Reply-To:</label><input type="text" id="emailReplyTo" placeholder="optional@domain.com">
+        </div>
+        <div class="field-row"><label>CC:</label><input type="text" id="emailCc" placeholder="cc@domain.com"></div>
+        <div class="field-row"><label>BCC:</label><input type="text" id="emailBcc" placeholder="bcc@domain.com"></div>
+        <div class="field-row"><label>Subject:</label><input type="text" id="emailSubject" value="Notification"></div>
+        <div class="field-row"><label>Email Body:</label>
+          <div class="editor-toolbar">
+            <button type="button" class="editor-btn" onclick="execCmd('bold')">B</button><button type="button" class="editor-btn" onclick="execCmd('italic')">I</button><button type="button" class="editor-btn" onclick="execCmd('underline')">U</button>
+          </div>
+          <div id="emailBodyCanvas" class="editor-canvas" contenteditable="true"></div>
+        </div>
+
+        <div style="margin-top: 15px; margin-bottom: 15px;">
+          <span class="tag-instruction-red">List of available tags you can use:</span>
+          <div id="emailTemplateTagsContainer"></div>
+        </div>
+
+        <div class="attachment-box">
+          <div>
+            <button class="btn-link-drive" type="button" onclick="addDriveFileLink()">📎 Add Drive File</button><button class="btn-browse-local" type="button" onclick="document.getElementById('localFileInput').click()">📁 Upload Local File</button><input type="file" id="localFileInput" style="display:none;" onchange="handleLocalFileUpload(this)">
+          </div>
+          <ul id="filesTrackRecordList" class="attachment-list"></ul>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep8" data-visible="true">
+        <p class="instruction-text">Set up the standard filter parameters that establish row processing rules.</p>
+        <div class="field-row"><label>Filter Sheet Column:</label><select id="mergeConditionField"></select></div>
+        <div class="field-row">
+          <label>Logical Operator:</label><select id="mergeConditionOperator" onchange="toggleConditionValue()"><option value="NOT_EMPTY">Is Not Empty</option><option value="CONTAINS">Contains Text</option></select>
+        </div>
+        <div id="condValueWrapper" style="display:none;" class="field-row"><label>Filter Target Keyword:</label><input type="text" id="mergeConditionValue" placeholder="e.g. Approved, Pending, Meditech">
+          <div id="condValueMissingError" class="error-box" style="margin-top:5px; display:none;">❌ Keyword cannot be
+            blank when using the 'Contains Text' operator.</div>
+        </div>
+      </div>
+
+      <div class="step-panel" id="panelStep9" data-visible="true">
+        <p class="instruction-text">Choose execution schedule.</p>
+        <div><label><input type="radio" name="schedule" value="MANUAL" checked> Manual - Run only when triggered</label>
+        </div>
+        <div><label><input type="radio" name="schedule" value="5"> Every 5 minutes</label></div>
+        <div><label><input type="radio" name="schedule" value="15"> Every 15 minutes</label></div>
+        <div><label><input type="radio" name="schedule" value="60"> Every 1 hour</label></div>
+        <div><label><input type="radio" name="schedule" value="360"> Every 6 hours</label></div>
+        <div><label><input type="radio" name="schedule" value="720"> Every 12 hours</label></div>
+        <div><label><input type="radio" name="schedule" value="1440"> Every 24 hours</label></div>
+      </div>
+    </div>
+
+    <div class="wizard-footer">
+      <button class="share btn-gray" id="backBtn" onclick="handleNavigationBack()" disabled>Back</button>
+      <div class="nav-btn-deck">
+        <button class="blue" id="saveBtn" onclick="saveCurrentProgress()">💾 Save Settings</button><button class="blue" id="nextBtn" onclick="handleNavigationNext()">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    // ==========================================
+    // STATE VARIABLES
+    // ==========================================
+    var currentStepIndex = 1;
+    var totalStepsCount = 9;
+    var userColumnsCache = [];
+    var oAuthTokenSecureStr = "";
+    var pickerApiLoaded = false;
+    var tagsDetected = false;
+    var hasMismatch = false;
+    var selectedType = "PDF_ONLY";
+    var editingTemplateId = null;
+    var activeDriveLinksCache = [];
+    var activeLocalFilesCache = [];
+    var existingTemplates = [];
+    var pendingTagMappings = null;
+    
+    var lastFocusedEmailField = "BODY"; 
+    var savedBodyRangeSelection = null;
+
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
+    function execCmd(cmd) { document.execCommand(cmd, false, null); updateSavedSelection(); }
+    function toggleConditionValue() { 
+      var operatorEl = document.getElementById('mergeConditionOperator');
+      if (!operatorEl) return;
+      var isContains = operatorEl.value === "CONTAINS";
+      var wrapper = document.getElementById('condValueWrapper');
+      if (wrapper) wrapper.style.display = isContains ? "block" : "none"; 
+      if(!isContains) {
+        var errBox = document.getElementById('condValueMissingError');
+        if (errBox) errBox.style.display = 'none';
+      }
+    }
+    
+    function updateSavedSelection() {
+      var canvas = document.getElementById("emailBodyCanvas");
+      if (!canvas) return;
+      var sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        var range = sel.getRangeAt(0);
+        if (canvas.contains(range.commonAncestorContainer)) {
+          savedBodyRangeSelection = range.cloneRange();
+        }
+      }
+    }
+    
+    function handleSmartEmailTagInsertion(tagText) {
+      if (lastFocusedEmailField === "SUBJECT") {
+        var subInput = document.getElementById("emailSubject");
+        if (!subInput) return;
+        var startPos = subInput.selectionStart;
+        var endPos = subInput.selectionEnd;
+        var currentVal = subInput.value;
+        
+        subInput.value = currentVal.substring(0, startPos) + tagText + currentVal.substring(endPos, currentVal.length);
+        subInput.focus();
+        subInput.selectionStart = subInput.selectionEnd = startPos + tagText.length;
+      } else {
+        var canvas = document.getElementById("emailBodyCanvas");
+        if (!canvas) return;
+        canvas.focus();
+        var sel = window.getSelection();
+        
+        if (savedBodyRangeSelection) {
+          sel.removeAllRanges();
+          sel.addRange(savedBodyRangeSelection);
+        }
+        
+        if (sel.getRangeAt && sel.rangeCount) {
+          var range = sel.getRangeAt(0);
+          if (canvas.contains(range.commonAncestorContainer)) {
+            range.deleteContents();
+            var textNode = document.createTextNode(tagText);
+            range.insertNode(textNode);
+            
+            range.setStartAfter(textNode);
+            range.setEndAfter(textNode);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            savedBodyRangeSelection = range.cloneRange();
+            return;
+          }
+        }
+        canvas.innerHTML += tagText;
+        savedBodyRangeSelection = null;
+      }
+    }
+    
+    function selectTemplateType(type) {
+      selectedType = type;
+      document.querySelectorAll('.type-option').forEach(function(el) { el.classList.remove('selected'); });
+      var typeCard = document.getElementById('type' + (type === 'PDF_ONLY' ? 'PDFOnly' : type === 'EMAIL_ONLY' ? 'EmailOnly' : 'Both'));
+      if (typeCard) typeCard.classList.add('selected');
+      
+      var radioBtn = document.getElementById('radio' + (type === 'PDF_ONLY' ? 'PDF' : type === 'EMAIL_ONLY' ? 'Email' : 'Both'));
+      if (radioBtn) radioBtn.checked = true;
+      
+      var showPdfSteps = (type === "PDF_ONLY" || type === "BOTH");
+      var showEmailSteps = (type === "EMAIL_ONLY" || type === "BOTH");
+      
+      for (var idx = 1; idx <= totalStepsCount; idx++) {
+        var el = document.getElementById('panelStep' + idx);
+        if (!el) continue;
+        
+        var isPdfStep = el.hasAttribute('data-pdf-step');
+        var isEmailStep = el.hasAttribute('data-email-step');
+        
+        if (isPdfStep && !showPdfSteps) {
+          el.setAttribute('data-visible', 'false');
+        } else if (isEmailStep && !showEmailSteps) {
+          el.setAttribute('data-visible', 'false');
+        } else {
+          el.setAttribute('data-visible', 'true');
+        }
+      }
+      renderProgressDots();
+    }
+    
+    function addDriveFileLink() { var url = prompt("Enter Google Drive file URL:"); if(url) { activeDriveLinksCache.push(url); renderAttachments(); } }
+    
+    function handleLocalFileUpload(input) { 
+      var file = input.files[0]; 
+      if(file && file.size <= 5*1024*1024) { 
+        var reader = new FileReader(); 
+        reader.onload = function(e) { 
+          google.script.run.withSuccessHandler(function(res) { 
+            if(res.success) { activeLocalFilesCache.push({id: res.id, name: res.name}); renderAttachments(); } 
+          }).UPLOAD_LOCAL_FILE_STREAM({name: file.name, mimeType: file.type, data: e.target.result}); 
+        }; 
+        reader.readAsDataURL(file); 
+      } else alert("File too large (max 5MB)"); 
+    }
+    
+    function renderAttachments() { 
+      var ul = document.getElementById("filesTrackRecordList"); 
+      if (!ul) return;
+      ul.innerHTML = ""; 
+      activeDriveLinksCache.forEach(function(u) { var li = document.createElement("li"); li.innerText = "☁️ " + u.substring(u.length-20); ul.appendChild(li); }); 
+      activeLocalFilesCache.forEach(function(f) { var li = document.createElement("li"); li.innerText = "💻 " + f.name; ul.appendChild(li); }); 
+    }
+
+    function getDisplayStepNumber(stepIndex) {
+      var displayNum = 0;
+      for (var i = 1; i <= stepIndex; i++) {
+        var p = document.getElementById("panelStep" + i);
+        if (p && p.getAttribute('data-visible') === 'true') {
+          displayNum++;
+        }
+      }
+      return displayNum;
+    }
+
+    // ==========================================
+    // NAVIGATION CONTROLLER
+    // ==========================================
+    function handleNavigationNext() {
+      if (!validateCurrentStep(currentStepIndex)) return;
+      
+      var nextTarget = currentStepIndex + 1;
+      while (nextTarget <= totalStepsCount) {
+        var targetPanel = document.getElementById("panelStep" + nextTarget);
+        if (targetPanel && targetPanel.getAttribute('data-visible') === 'true') {
+          break;
+        }
+        nextTarget++;
+      }
+      
+      if (nextTarget <= totalStepsCount) {
+        goToStep(nextTarget);
+      } else {
+        finishTemplate();
+      }
+    }
+
+    function handleNavigationBack() {
+      var backTarget = currentStepIndex - 1;
+      while (backTarget >= 1) {
+        var targetPanel = document.getElementById("panelStep" + backTarget);
+        if (targetPanel && targetPanel.getAttribute('data-visible') === 'true') {
+          break;
+        }
+        backTarget--;
+      }
+      
+      if (backTarget >= 1) {
+        goToStep(backTarget);
+      }
+    }
+
+    function goToStep(step) { 
+      if (step < 1 || step > totalStepsCount) return; 
+      
+      var currentPanel = document.getElementById("panelStep" + currentStepIndex);
+      if (currentPanel) currentPanel.classList.remove("active"); 
+      
+      currentStepIndex = step; 
+      var nextPanel = document.getElementById("panelStep" + currentStepIndex);
+      if (nextPanel) nextPanel.classList.add("active"); 
+      
+      renderProgressDots();
+      
+      var titles = ["TEMPLATE NAME & TYPE","SELECT DOCUMENT TEMPLATE","MAP TAGS","OUTPUT FORMAT","FILENAME PATTERN","DESTINATION FOLDER","EMAIL CONFIGURATION","FILTER CONDITION","SCHEDULE"];
+      var functionalStepNumber = getDisplayStepNumber(step);
+      document.getElementById("wizardTitleDisplay").innerText = "STEP " + functionalStepNumber + " - " + titles[step-1];
+      
+      var dynamicBackCheck = step - 1;
+      var hasBackStep = false;
+      while (dynamicBackCheck >= 1) {
+        var pCheck = document.getElementById("panelStep" + dynamicBackCheck);
+        if (pCheck && pCheck.getAttribute('data-visible') === 'true') {
+          hasBackStep = true;
+          break;
+        }
+        dynamicBackCheck--;
+      }
+      document.getElementById('backBtn').disabled = !hasBackStep; 
+      
+      if (step === 3 && document.getElementById('docTemplateUrl').value) analyzeDocumentTemplateTags(); 
+      
+      var nextBtn = document.getElementById('nextBtn'); 
+      var checkAhead = step + 1;
+      var isLastActiveStep = true;
+      while (checkAhead <= totalStepsCount) {
+        var pAhead = document.getElementById("panelStep" + checkAhead);
+        if (pAhead && pAhead.getAttribute('data-visible') === 'true') {
+          isLastActiveStep = false;
+          break;
+        }
+        checkAhead++;
+      }
+
+      if (isLastActiveStep) { 
+        nextBtn.innerText = "Finish"; 
+      } else { 
+        nextBtn.innerText = "Next"; 
+      } 
+    }
+
+    function renderProgressDots() {
+      var container = document.getElementById('progressDotsContainer');
+      if (!container) return;
+      container.innerHTML = "";
+      for (var i = 1; i <= totalStepsCount; i++) {
+        var panel = document.getElementById("panelStep" + i);
+        var isVisible = panel ? panel.getAttribute('data-visible') === 'true' : true;
+        
+        var dot = document.createElement('div');
+        if (!isVisible) {
+          dot.className = "dot disabled";
+        } else if (i === currentStepIndex) {
+          dot.className = "dot active";
+        } else {
+          dot.className = "dot";
+        }
+        dot.id = "progressDot_" + i;
+        container.appendChild(dot);
+      }
+    }
+
+    function validateCurrentStep(stepToCheck) {
+      var targetStep = stepToCheck || currentStepIndex;
+      var panel = document.getElementById("panelStep" + targetStep);
+      
+      if (panel && panel.getAttribute('data-visible') === 'false') {
+        return true;
+      }
+
+      if(targetStep === 1) { 
+        var nameInput = document.getElementById('templateName');
+        var templateName = nameInput ? nameInput.value.trim() : ""; 
+        if(!templateName) { alert("Please enter a template name"); return false; } 
+        
+        var nameExists = existingTemplates.some(function(t) { 
+          return t.name.trim().toLowerCase() === templateName.toLowerCase() && t.id !== editingTemplateId; 
+        }); 
+        
+        var errLabel = document.getElementById('templateNameError');
+        if(nameExists) { 
+          if (errLabel) errLabel.style.display = 'block'; 
+          return false; 
+        } 
+        if (errLabel) errLabel.style.display = 'none'; 
+      }
+      
+      if(targetStep === 2) {
+        var urlInput = document.getElementById('docTemplateUrl');
+        if(urlInput && !urlInput.value) { alert("Please select a document template"); return false; }
+      }
+      
+      if(targetStep === 3 && (!tagsDetected || hasMismatch)) { 
+        alert("Please map all tags to spreadsheet columns before proceeding"); 
+        return false; 
+      }
+      
+      if(targetStep === 6 && (selectedType === "PDF_ONLY" || selectedType === "BOTH")) {
+        var destInput = document.getElementById('targetFolderInput');
+        if(destInput && !destInput.value.trim()) { alert("Please select a destination folder"); return false; }
+      }
+      
+      if(targetStep === 7 && (selectedType === "EMAIL_ONLY" || selectedType === "BOTH")) { 
+        var subInput = document.getElementById('emailSubject');
+        var bodyCanvas = document.getElementById('emailBodyCanvas');
+        var subject = subInput ? subInput.value.trim() : ""; 
+        var body = bodyCanvas ? bodyCanvas.innerHTML.trim() : ""; 
+        if(!subject) { alert("Please enter an email subject"); return false; } 
+        if(!body || body === "<br>") { alert("Please enter an email body"); return false; } 
+      }
+      
+      if(targetStep === 8) {
+        var operatorValue = document.getElementById('mergeConditionOperator')?.value;
+        if(operatorValue === "CONTAINS") {
+          var inputKeyword = document.getElementById('mergeConditionValue')?.value.trim();
+          if(!inputKeyword) {
+            var condErr = document.getElementById('condValueMissingError');
+            if (condErr) condErr.style.display = 'block';
+            document.getElementById('mergeConditionValue')?.focus();
+            return false;
+          }
+        }
+        var condErrClean = document.getElementById('condValueMissingError');
+        if (condErrClean) condErrClean.style.display = 'none';
+      }
+      return true;
+    }
+
+    function notifySidebarToRefresh() {
+      google.script.run.SIGNAL_SIDEBAR_REFRESH();
+    }
+
+    function saveCurrentProgress() {
+    if(!validateCurrentStep(1)) return;
+    if(!validateCurrentStep(currentStepIndex)) return;
+    
+    // Show loading state on button
+    var saveBtn = document.getElementById('saveBtn');
+    var originalText = saveBtn.innerText;
+    saveBtn.innerText = "⏳ Saving...";
+    saveBtn.disabled = true;
+    
+    saveTemplate(function() {
+    saveBtn.innerText = originalText;
+    saveBtn.disabled = false;
+    notifySidebarToRefresh();
+    alert("Settings saved successfully!");
+    }, function(error) {
+    saveBtn.innerText = originalText;
+    saveBtn.disabled = false;
+    alert("Error saving: " + error.message);
+    });
+    }
+
+    function finishTemplate() {
+    if(!validateCurrentStep(1)) return;
+    if(!validateCurrentStep(currentStepIndex)) return;
+    
+    var selectedScheduleEl = document.querySelector('input[name="schedule"]:checked');
+    var schedule = selectedScheduleEl ? selectedScheduleEl.value : "MANUAL";
+    
+    // First save the template, then save the schedule
+    saveTemplate(function(savedTemplateId) {
+    // Use the saved template ID (if editingTemplateId is null, use the returned ID)
+    var finalTemplateId = editingTemplateId || savedTemplateId;
+    
+    google.script.run
+    .withSuccessHandler(function() {
+    notifySidebarToRefresh();
+    alert("Template saved successfully!");
+    google.script.host.close();
+    })
+    .withFailureHandler(function(err) {
+    console.log("Error saving schedule:", err);
+    notifySidebarToRefresh();
+    alert("Template saved but schedule could not be set.");
+    google.script.host.close();
+    })
+    .SAVE_TEMPLATE_SCHEDULE({templateId: finalTemplateId, schedule: schedule});
+    });
+    }
+    
+    function saveTemplate(successCallback, errorCallback) { 
+  var config = {
+    condField: document.getElementById('mergeConditionField')?.value || "", 
+    condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY", 
+    condValue: document.getElementById('mergeConditionValue')?.value || ""
+  }; 
+  
+  if(selectedType === "PDF_ONLY" || selectedType === "BOTH") { 
+    config.templateUrl = document.getElementById('docTemplateUrl')?.value || "";
+    config.tagMappings = getTagMappings();
+    config.format = document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF";
+    config.namePattern = document.getElementById('fileNamePattern')?.value || "";
+    config.folderDestination = document.getElementById('targetFolderInput')?.value || "";
+  } 
+  
+  var template = { 
+    id: editingTemplateId, 
+    name: document.getElementById('templateName')?.value.trim() || "", 
+    type: selectedType, 
+    config: config, 
+    emailConfig: { 
+      replyTo: document.getElementById('emailReplyTo')?.value || "", 
+      cc: document.getElementById('emailCc')?.value || "", 
+      bcc: document.getElementById('emailBcc')?.value || "", 
+      subject: document.getElementById('emailSubject')?.value || "Notification", 
+      body: document.getElementById('emailBodyCanvas')?.innerHTML || "", 
+      driveAttachments: activeDriveLinksCache, 
+      localAttachments: activeLocalFilesCache 
+    } 
+  }; 
+  
+  google.script.run
+    .withSuccessHandler(function(saved) { 
+      editingTemplateId = saved.id; 
+      
+      // Refresh templates list in background
+      google.script.run.withSuccessHandler(function(templates) { 
+        existingTemplates = templates || []; 
+      }).GET_ALL_TEMPLATES();
+      
+      if(successCallback) successCallback(saved.id); 
+    })
+    .withFailureHandler(function(err) {
+      if(errorCallback) {
+        errorCallback(err);
+      } else {
+        alert("❌ Error saving configurations: " + err.message);
+      }
+    })
+    .SAVE_TEMPLATE(template); 
+}
+    
+    function getTagMappings() { 
+      var mappings = {}; 
+      document.querySelectorAll('.tag-mapper-dropdown').forEach(function(sel) { if(sel.value) mappings[sel.getAttribute('data-doc-tag')] = sel.value; }); 
+      return mappings; 
+    }
+
+    // ==========================================
+    // PICKER & CONFIG SELECTIONS
+    // ==========================================
+    function initiateNativeGooglePickerLibraries() { gapi.load('picker', {callback: function() { pickerApiLoaded = true; google.script.run.withSuccessHandler(function(token) { oAuthTokenSecureStr = token; var pBtn = document.getElementById('pickerLaunchBtn'); if(pBtn) pBtn.disabled = false; }).GET_SYSTEM_OAUTH_TOKEN(); }}); }
+    
+    function launchNativeGoogleDrivePicker(mode) { 
+      if(!pickerApiLoaded || !oAuthTokenSecureStr) { alert("Please wait, loading Drive components..."); return; } 
+      if(mode === 'DOCS') { 
+        var view = new google.picker.DocsView(google.picker.ViewId.DOCUMENTS).setMimeTypes("application/vnd.google-apps.document").setOwnedByMe(true); 
+        new google.picker.PickerBuilder().addView(view).setOAuthToken(oAuthTokenSecureStr).setOrigin(google.script.host.origin).setSize(800,600).setTitle("Select Document Template").setCallback(function(data) { if(data.action === google.picker.Action.PICKED) { var doc = data.docs[0]; document.getElementById('docTemplateUrl').value = doc.url; document.getElementById('fileSelectionMetaDisplay').innerHTML = "✅ Selected: " + doc.name; } }).build().setVisible(true); 
+      } else { 
+        var view = new google.picker.DocsView(google.picker.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setOwnedByMe(true); 
+        new google.picker.PickerBuilder().addView(view).setOAuthToken(oAuthTokenSecureStr).setOrigin(google.script.host.origin).setSize(800,600).setTitle("Select Destination Folder").setCallback(function(data) { if(data.action === google.picker.Action.PICKED) { var folder = data.docs[0]; document.getElementById('targetFolderInput').value = folder.url; document.getElementById('folderError').style.display = 'none'; } }).build().setVisible(true); 
+      } 
+    }
+
+    function analyzeDocumentTemplateTags() {
+      var url = document.getElementById('docTemplateUrl').value;
+      var tbody = document.getElementById('tagMappingBody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Scanning tags...</td></tr>';
+      google.script.run.withSuccessHandler(function(tags) {
+        tbody.innerHTML = "";
+        if(!tags || tags.length === 0) {
+          tagsDetected = false;
+          tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#d93025;">No tags found</td></tr>';
+          document.getElementById('noTagsWarning').style.display = 'block';
+          document.getElementById('mismatchWarning').style.display = 'none';
+          return;
+        }
+        tagsDetected = true;
+        hasMismatch = false;
+        tags.forEach(function(tag) {
+          var tr = document.createElement('tr');
+          var tdDoc = document.createElement('td');
+          tdDoc.innerText = "{" + tag + "}";
+          tdDoc.style.fontWeight = "bold";
+          var tdSheet = document.createElement('td');
+          var select = document.createElement('select');
+          select.className = "tag-mapper-dropdown";
+          select.style.width = "100%";
+          select.setAttribute('data-doc-tag', tag);
+          var blank = document.createElement('option');
+          blank.value = "";
+          blank.innerText = "-- Select Column --";
+          blank.selected = true;
+          select.appendChild(blank);
+          userColumnsCache.forEach(function(h) {
+            var opt = document.createElement('option');
+            opt.value = h;
+            opt.innerText = h;
+            select.appendChild(opt);
+          });
+          select.addEventListener('change', function() {
+            var parentRow = this.closest('tr');
+            if(this.value !== "") {
+              var span = parentRow.querySelector('.mismatch-span');
+              if(span) span.remove();
+              parentRow.style.backgroundColor = "";
+            } else {
+              var span = parentRow.querySelector('.mismatch-span');
+              if(!span) {
+                var td = parentRow.querySelector('td:first-child');
+                td.innerHTML = td.innerHTML.split(' <span')[0];
+                td.innerHTML += ' <span class="mismatch-span">! (Not Mapped)</span>';
+              }
+              parentRow.style.backgroundColor = "#fffbfb";
+            }
+            updateMismatchWarning();
+          });
+          tdSheet.appendChild(select);
+          tr.appendChild(tdDoc);
+          tr.appendChild(tdSheet);
+          tbody.appendChild(tr);
+        });
+        updateMismatchWarning();
+        if(pendingTagMappings) {
+          document.querySelectorAll('.tag-mapper-dropdown').forEach(function(sel) {
+            var tag = sel.getAttribute('data-doc-tag');
+            if(pendingTagMappings[tag]) {
+              sel.value = pendingTagMappings[tag];
+              var evt = new Event('change');
+              sel.dispatchEvent(evt);
+            }
+          });
+          pendingTagMappings = null;
+        }
+      }).EXTRACT_TEMPLATE_TAGS_STREAM(url);
+    }
+    
+    function updateMismatchWarning() {
+      var any = false;
+      document.querySelectorAll('.tag-mapper-dropdown').forEach(function(sel) { if(sel.value === "") any = true; });
+      hasMismatch = any;
+      var w = document.getElementById('mismatchWarning');
+      if(w) w.style.display = hasMismatch ? 'block' : 'none';
+    }
+
+    function loadExistingTemplateData(existing) {
+      if(!existing) return;
+      
+      editingTemplateId = existing.id;
+      document.getElementById('templateName').value = existing.name || '';
+      selectTemplateType(existing.type || 'PDF_ONLY');
+      
+      if(existing.config) {
+        if(existing.config.templateUrl) {
+          document.getElementById('docTemplateUrl').value = existing.config.templateUrl;
+          document.getElementById('fileSelectionMetaDisplay').innerHTML = "✅ Template loaded";
+        }
+        if(existing.config.format) {
+          var formatRadio = document.getElementById(existing.config.format === "PDF" ? 'fmtPdf' : 'fmtDoc');
+          if (formatRadio) formatRadio.checked = true;
+        }
+        if(existing.config.namePattern) document.getElementById('fileNamePattern').value = existing.config.namePattern;
+        if(existing.config.condField) document.getElementById('mergeConditionField').value = existing.config.condField;
+        if(existing.config.condOperator) {
+          document.getElementById('mergeConditionOperator').value = existing.config.condOperator;
+          toggleConditionValue();
+        }
+        if(existing.config.condValue) document.getElementById('mergeConditionValue').value = existing.config.condValue;
+        if(existing.config.folderDestination) document.getElementById('targetFolderInput').value = existing.config.folderDestination;
+        if(existing.config.tagMappings) pendingTagMappings = existing.config.tagMappings;
+      }
+      
+      if(existing.emailConfig) {
+        document.getElementById('emailReplyTo').value = existing.emailConfig.replyTo || '';
+        document.getElementById('emailCc').value = existing.emailConfig.cc || '';
+        document.getElementById('emailBcc').value = existing.emailConfig.bcc || '';
+        document.getElementById('emailSubject').value = existing.emailConfig.subject || '';
+        document.getElementById('emailBodyCanvas').innerHTML = existing.emailConfig.body || '';
+        activeDriveLinksCache = existing.emailConfig.driveAttachments || [];
+        activeLocalFilesCache = existing.emailConfig.localAttachments || [];
+        renderAttachments();
+      }
+    }
+
+    window.onload = function() {
+      renderProgressDots();
+      initiateNativeGooglePickerLibraries();
+      
+      var bodyCanvas = document.getElementById("emailBodyCanvas");
+      
+      document.getElementById("emailSubject").addEventListener("focus", function() {
+        lastFocusedEmailField = "SUBJECT";
+      });
+      if (bodyCanvas) {
+        bodyCanvas.addEventListener("focus", function() {
+          lastFocusedEmailField = "BODY";
+        });
+        bodyCanvas.addEventListener("keyup", updateSavedSelection);
+        bodyCanvas.addEventListener("mouseup", updateSavedSelection);
+        bodyCanvas.addEventListener("blur", updateSavedSelection);
+      }
+
+      google.script.run.withSuccessHandler(function(templates) { 
+        existingTemplates = templates || []; 
+      }).GET_ALL_TEMPLATES();
+      
+      google.script.run.withSuccessHandler(function(response) { 
+        userColumnsCache = response.userHeaders || []; 
+        
+        var condSelect = document.getElementById('mergeConditionField');
+        if (condSelect) {
+          condSelect.innerHTML = "";
+          userColumnsCache.forEach(function(h) {
+            var opt = document.createElement('option');
+            opt.value = h;
+            opt.innerText = h;
+            condSelect.appendChild(opt);
+          });
+        }
+        
+        var tagsContainer = document.getElementById('fileNameTagsContainer');
+        if (tagsContainer) {
+          tagsContainer.innerHTML = "";
+          userColumnsCache.forEach(function(h) {
+            var span = document.createElement('span');
+            span.className = "tag-chip";
+            span.innerText = "{" + h + "}";
+            span.onclick = function() {
+              var patInput = document.getElementById('fileNamePattern');
+              if (!patInput) return;
+              var startPos = patInput.selectionStart;
+              var endPos = patInput.selectionEnd;
+              var currentVal = patInput.value;
+              patInput.value = currentVal.substring(0, startPos) + "{" + h + "}" + currentVal.substring(endPos, currentVal.length);
+              patInput.focus();
+              patInput.selectionStart = patInput.selectionEnd = startPos + h.length + 2;
+            };
+            tagsContainer.appendChild(span);
+          });
+        }
+        
+        var emailTagsContainer = document.getElementById('emailTemplateTagsContainer');
+        if (emailTagsContainer) {
+          emailTagsContainer.innerHTML = "";
+          userColumnsCache.forEach(function(h) {
+            var span = document.createElement('span');
+            span.className = "tag-chip";
+            span.innerText = "{" + h + "}";
+            span.onclick = function() {
+              handleSmartEmailTagInsertion("{" + h + "}");
+            };
+            emailTagsContainer.appendChild(span);
+          });
+        }
+        
+        selectTemplateType(selectedType);
+      }).GET_WIZARD_INITIALIZATION_PAYLOAD();
+      
+      if(typeof existingTemplateIdFromServer !== 'undefined' && existingTemplateIdFromServer) {
+        google.script.run.withSuccessHandler(loadExistingTemplateData).GET_TEMPLATE_BY_ID_FOR_EDIT(existingTemplateIdFromServer);
+      }
+    };
+    
+    var existingTemplateIdFromServer = <?!= existingTemplateId ? JSON.stringify(existingTemplateId) : 'null' ?>;
+  </script>
+</body>
+
+</html>

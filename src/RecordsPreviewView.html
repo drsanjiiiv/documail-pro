@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+  <style>
+    body {
+      padding: 16px;
+      font-family: 'Roboto', sans-serif;
+      background-color: #ffffff;
+      color: #3c4043;
+      margin: 0;
+      box-sizing: border-box;
+    }
+
+    /* Main container - vertical layout */
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 180px);
+      gap: 16px;
+    }
+
+    /* Records Pane - Top 30% */
+    .records-pane {
+      flex: 3;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      overflow: auto;
+      padding: 12px;
+      background: #f8f9fa;
+      min-height: 0;
+    }
+
+    /* Preview Pane - Bottom 70% */
+    .preview-pane {
+      flex: 7;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      overflow: auto;
+      padding: 12px;
+      background: #ffffff;
+      min-height: 0;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #1a73e8;
+      margin-bottom: 6px;
+    }
+
+    .sub-header {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 12px;
+    }
+
+    .quota-banner {
+      background: #e8f0fe;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .records-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .records-table th {
+      background: #f1f3f4;
+      padding: 8px;
+      text-align: left;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid #dadce0;
+    }
+
+    .records-table td {
+      padding: 8px;
+      border-bottom: 1px solid #e8eaed;
+    }
+
+    .records-table tr:hover {
+      background: #f1f3f4;
+      cursor: pointer;
+    }
+
+    .records-table tr.selected {
+      background: #e8f0fe;
+    }
+
+    .preview-box {
+      height: calc(100% - 30px);
+      overflow: auto;
+      background: #ffffff;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px;
+      border: 1px solid #e8eaed;
+      border-radius: 6px;
+    }
+
+    .preview-label {
+      font-weight: bold;
+      color: #1a73e8;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+
+    .actions-bar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 16px;
+      border-top: 1px solid #e8eaed;
+      padding-top: 12px;
+    }
+
+    /* Next button - Blue with white text */
+    .btn-next {
+      background-color: #1a73e8 !important;
+      color: #000000 !important;
+      border: 1px solid #155cb4 !important;
+      padding: 0 24px;
+      height: 36px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-next:hover {
+      background-color: #1557b0 !important;
+    }
+
+    /* Back button - Gray with white text */
+    .btn-back {
+      background-color: #5f6368 !important;
+      color: #000000 !important;
+      border: 1px solid #4a4d51 !important;
+      padding: 0 16px;
+      height: 36px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-back:hover {
+      background-color: #4a4d51 !important;
+    }
+
+    /* Send button - Green with white text */
+    .btn-send {
+      background-color: #137333 !important;
+      color: #000000 !important;
+      border: 1px solid #0f5d29 !important;
+      padding: 0 24px;
+      height: 36px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-send:hover {
+      background-color: #0f5d29 !important;
+    }
+
+    /* Cancel button - White with gray border */
+    .btn-cancel {
+      background-color: #ffffff !important;
+      color: #3c4043 !important;
+      border: 1px solid #dadce0 !important;
+      padding: 0 16px;
+      height: 36px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      background-color: #f1f3f4 !important;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #5f6368;
+      font-style: italic;
+    }
+
+    .checkbox-cell {
+      width: 40px;
+      text-align: center;
+    }
+
+    hr {
+      margin: 12px 0;
+      border-color: #e8eaed;
+    }
+
+    .quota-info {
+      font-weight: bold;
+      color: #137333;
+    }
+
+    .quota-warning {
+      font-weight: bold;
+      color: #e37400;
+    }
+
+    .select-all-row {
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #dadce0;
+    }
+
+    /* Fix for table header - remove any extra characters */
+    .records-table th:first-child {
+      width: 40px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Screen 1: Record Selection + Preview -->
+  <div id="screen1" style="display: flex; flex-direction: column; height: 100vh; padding: 16px;">
+    <div>
+      <div class="header-title">Confirm Eligible Send Dispatch Records</div>
+      <div class="sub-header">Select which active row iterations the execution engine will process now:</div>
+
+      <div class="quota-banner">
+        <div>⚠️ <strong>Daily Limit Notice:</strong>
+          <span id="quotaCounterField">Checking remaining daily quotas...</span></div>
+        <div style="text-align: right; font-weight: bold; color: #b06000;" id="quotaDisplay"></div>
+      </div>
+    </div>
+
+    <div class="main-container">
+      <!-- Records Pane - Top (30%) -->
+      <div class="records-pane">
+        <div class="select-all-row">
+          <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllRecords()">
+          <label for="selectAllCheckbox" style="margin-left: 4px;">Select All</label>
+        </div>
+        <div id="recordsTableContainer">
+          <div class="loading">⏳ Scanning spreadsheet logs matrix...</div>
+        </div>
+      </div>
+
+      <!-- Preview Pane - Bottom (70%) -->
+      <div class="preview-pane">
+        <div class="preview-label">📧 Email Preview</div>
+        <div id="emailPreview" class="preview-box">
+          <p style="color: #5f6368;">Select a record to preview email content</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions-bar">
+      <button class="btn-cancel" onclick="goBackToComposerWindow()">Cancel</button>
+      <button class="btn-next" id="nextBtn" onclick="goToScreen2()" disabled>Next →</button>
+    </div>
+  </div>
+
+  <!-- Screen 2: Quota & Manual Selection -->
+  <div id="screen2" style="display: none; flex-direction: column; height: 100vh; padding: 16px;">
+    <div>
+      <div class="header-title">📊 Mail Quota & Batch Processing</div>
+      <div class="sub-header">Select which records to process manually within available quota limits.</div>
+
+      <div class="quota-banner">
+        <div>📊 <strong>Available Today:</strong> <span id="quotaScreen2Display" class="quota-info">--</span></div>
+        <div>📝 <strong>Selected to Send:</strong> <span id="selectedCountDisplay">0</span></div>
+      </div>
+    </div>
+
+    <div id="recordsContainer2"
+      style="flex: 1; border: 1px solid #dadce0; border-radius: 6px; overflow: auto; margin-bottom: 16px;">
+      <div class="loading">Loading records...</div>
+    </div>
+
+    <div class="actions-bar">
+      <button class="btn-back" onclick="goToScreen1()">← Back</button>
+      <button class="btn-send" id="sendBtn" onclick="fireFinalAutomatedSend()" disabled>🚀 Send Now</button>
+    </div>
+  </div>
+
+  <script>
+    let mappingRowsDataArray = [];
+      let emailTemplate = null;
+      let selectedRecordsForScreen2 = new Set();
+      let dailyQuota = 0;
+      let sheetHeaders = [];
+      
+      // ==========================================
+      // FUNCTION: goBackToComposerWindow
+      // ==========================================
+      function goBackToComposerWindow() {
+        google.script.run.OPEN_CENTER_TEMPLATE_MODAL();
+      }
+      
+      // ==========================================
+      // FUNCTION: Load Data with Template
+      // ==========================================
+      window.onload = function() {
+        google.script.run
+          .withSuccessHandler(function(previewBundle) {
+            dailyQuota = previewBundle.remainingQuota || 0;
+            mappingRowsDataArray = previewBundle.eligibleRows || [];
+            emailTemplate = previewBundle.emailTemplate;
+            sheetHeaders = previewBundle.sheetHeaders || [];
+            
+            document.getElementById("quotaCounterField").innerText = "Remaining Gmail Allocations Today: " + dailyQuota;
+            document.getElementById("quotaDisplay").innerText = dailyQuota + " emails left";
+            document.getElementById("quotaScreen2Display").innerText = dailyQuota;
+            
+            renderRecordsTable();
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById("recordsTableContainer").innerHTML = '<div class="loading">❌ Error: ' + error.message + '</div>';
+          })
+          .GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE();
+      };
+      
+      // ==========================================
+      // FUNCTION: Render Records Table
+      // ==========================================
+      function renderRecordsTable() {
+        var container = document.getElementById("recordsTableContainer");
+        
+        if (!mappingRowsDataArray || mappingRowsDataArray.length === 0) {
+          container.innerHTML = '<div class="loading">❌ No eligible rows found matching your criteria.</div>';
+          document.getElementById("nextBtn").disabled = true;
+          return;
+        }
+        
+        var html = '<table class="records-table"><thead>';
+        html += '<tr><th class="checkbox-cell"><input type="checkbox" id="selectAllRecords" onchange="toggleAllRecords()"></th>';
+        html += '<th>Row #</th><th>Recipient Email</th><th>Reference</th></thead><tbody>';
+        
+        for (var idx = 0; idx < mappingRowsDataArray.length; idx++) {
+          var rowItem = mappingRowsDataArray[idx];
+          var checkedAttr = rowItem.selected ? 'checked' : '';
+          html += '<tr onclick="toggleRecordSelection(' + idx + ')" class="' + (rowItem.selected ? 'selected' : '') + '">';
+          html += '<td class="checkbox-cell"><input type="checkbox" id="chk_' + idx + '" ' + checkedAttr + ' onclick="event.stopPropagation(); toggleRecordSelection(' + idx + ')"></td>';
+          html += '<td><strong>' + rowItem.rowNum + '</strong></td>';
+          html += '<td>' + (rowItem.email || 'No email') + '</td>';
+          html += '<td>' + (rowItem.refData || '-') + '</td>';
+          html += '</tr>';
+        }
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        
+        // Preview first selected or first record
+        var firstSelected = -1;
+        for (var i = 0; i < mappingRowsDataArray.length; i++) {
+          if (mappingRowsDataArray[i].selected) {
+            firstSelected = i;
+            break;
+          }
+        }
+        if (firstSelected === -1 && mappingRowsDataArray.length > 0) {
+          mappingRowsDataArray[0].selected = true;
+          firstSelected = 0;
+        }
+        if (firstSelected !== -1) {
+          updateEmailPreview(firstSelected);
+        }
+        
+        updateNextButton();
+      }
+      
+      // ==========================================
+      // FUNCTION: Update Email Preview with Actual Values
+      // ==========================================
+      function updateEmailPreview(index) {
+        var record = mappingRowsDataArray[index];
+        if (!record || !emailTemplate) return;
+        
+        var previewHtml = emailTemplate.body || "";
+        var subjectPreview = emailTemplate.subject || "";
+        
+        // Use the rowData which contains all column values
+        var rowValues = record.rowData || {};
+        
+        // Also add direct record properties
+        rowValues["Row Number"] = record.rowNum;
+        rowValues["Email"] = record.email;
+        
+        // Replace tags in subject and body - Handle BOTH formats
+        for (var key in rowValues) {
+        var value = rowValues[key] || "";
+        
+        // Replace {?key?} format
+        var regex1 = new RegExp("\\{\\?" + escapeRegex(key) + "\\?\\}", "g");
+        subjectPreview = subjectPreview.replace(regex1, value);
+        previewHtml = previewHtml.replace(regex1, value);
+        
+        // Replace {key} format (without the ?)
+        var regex2 = new RegExp("\\{" + escapeRegex(key) + "\\}", "g");
+        subjectPreview = subjectPreview.replace(regex2, value);
+        previewHtml = previewHtml.replace(regex2, value);
+        }
+        
+        // Handle column headers from sheet
+        if (sheetHeaders && sheetHeaders.length > 0) {
+          for (var h = 0; h < sheetHeaders.length; h++) {
+            var header = sheetHeaders[h];
+            if (header && !rowValues[header]) {
+              var headerValue = record[header] || "";
+              
+              var regex1 = new RegExp("\\{\\?" + escapeRegex(header) + "\\?\\}", "g");
+              subjectPreview = subjectPreview.replace(regex1, headerValue);
+              previewHtml = previewHtml.replace(regex1, headerValue);
+              
+              var regex2 = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+              subjectPreview = subjectPreview.replace(regex2, headerValue);
+              previewHtml = previewHtml.replace(regex2, headerValue);
+            }
+          }
+        }
+        
+        // Build preview display
+        var display = '<div style="background:#f8f9fa; padding:8px; border-radius:4px; margin-bottom:12px;">';
+        display += '<strong>📧 To:</strong> ' + (record.email || 'No email') + '<br>';
+        display += '<strong>📝 Subject:</strong> ' + subjectPreview + '<br>';
+        display += '<strong>📅 Row:</strong> ' + record.rowNum + '</div>';
+        display += '<hr>';
+        display += previewHtml;
+        
+        document.getElementById("emailPreview").innerHTML = display;
+      }
+      
+      // Helper function to escape regex special characters
+      function escapeRegex(str) {
+        return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+      
+      // ==========================================
+      // FUNCTION: Toggle Record Selection
+      // ==========================================
+      function toggleRecordSelection(index) {
+        mappingRowsDataArray[index].selected = !mappingRowsDataArray[index].selected;
+        renderRecordsTable();
+      }
+      
+      // ==========================================
+      // FUNCTION: Toggle All Records
+      // ==========================================
+      function toggleAllRecords() {
+        var selectAllCheckbox = document.getElementById("selectAllRecords");
+        var isChecked = selectAllCheckbox ? selectAllCheckbox.checked : document.getElementById("selectAllCheckbox").checked;
+        
+        for (var i = 0; i < mappingRowsDataArray.length; i++) {
+          mappingRowsDataArray[i].selected = isChecked;
+        }
+        
+        renderRecordsTable();
+        if (isChecked && mappingRowsDataArray.length > 0) {
+          updateEmailPreview(0);
+        }
+      }
+      
+      // ==========================================
+      // FUNCTION: Update Next Button
+      // ==========================================
+      function updateNextButton() {
+        var selected = 0;
+        for (var i = 0; i < mappingRowsDataArray.length; i++) {
+          if (mappingRowsDataArray[i].selected) selected++;
+        }
+        document.getElementById("nextBtn").disabled = (selected === 0);
+      }
+      
+      // ==========================================
+      // FUNCTION: Get Selected Row Numbers
+      // ==========================================
+      function getSelectedRowNumbers() {
+        var rows = [];
+        for (var i = 0; i < mappingRowsDataArray.length; i++) {
+          if (mappingRowsDataArray[i].selected) {
+            rows.push(mappingRowsDataArray[i].rowNum);
+          }
+        }
+        return rows;
+      }
+      
+      // ==========================================
+      // SCREEN 2 FUNCTIONS
+      // ==========================================
+      function goToScreen2() {
+        var selectedRows = getSelectedRowNumbers();
+        if (selectedRows.length === 0) {
+          alert("Please select at least one record to proceed.");
+          return;
+        }
+        
+        document.getElementById("screen1").style.display = "none";
+        document.getElementById("screen2").style.display = "flex";
+        
+        renderScreen2Records();
+      }
+      
+      function renderScreen2Records() {
+        var selectedRecords = [];
+        for (var i = 0; i < mappingRowsDataArray.length; i++) {
+          if (mappingRowsDataArray[i].selected) {
+            selectedRecords.push(mappingRowsDataArray[i]);
+          }
+        }
+        
+        var container = document.getElementById("recordsContainer2");
+        
+        if (selectedRecords.length === 0) {
+          container.innerHTML = '<div class="loading">No records selected</div>';
+          return;
+        }
+        
+        var html = '<table class="records-table"><thead>';
+        html += '<tr><th class="checkbox-cell"><input type="checkbox" id="selectAllScreen2" onchange="toggleAllScreen2()"></th>';
+        html += '<th>Row #</th><th>Recipient Email</th><th>Reference</th><th>Status</th></thead><tbody>';
+        
+        for (var i = 0; i < selectedRecords.length; i++) {
+          var record = selectedRecords[i];
+          var isChecked = selectedRecordsForScreen2.has(record.rowNum);
+          html += '<tr>';
+          html += '<td class="checkbox-cell"><input type="checkbox" class="screen2-checkbox" data-row="' + record.rowNum + '" ' + (isChecked ? 'checked' : '') + ' onchange="updateScreen2Selection()"></td>';
+          html += '<td><strong>' + record.rowNum + '</strong></td>';
+          html += '<td>' + (record.email || 'No email') + '</td>';
+          html += '<td>' + (record.refData || '-') + '</td>';
+          html += '<td><span style="color:#5f6368;">Pending</span></td>';
+          html += '</tr>';
+        }
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        
+        // Initialize selected records
+        for (var i = 0; i < selectedRecords.length; i++) {
+          var record = selectedRecords[i];
+          if (!selectedRecordsForScreen2.has(record.rowNum)) {
+            selectedRecordsForScreen2.add(record.rowNum);
+          }
+        }
+        
+        var checkboxes = document.querySelectorAll('.screen2-checkbox');
+        for (var i = 0; i < checkboxes.length; i++) {
+          checkboxes[i].checked = true;
+        }
+        
+        updateScreen2Selection();
+      }
+      
+      function toggleAllScreen2() {
+        var isChecked = document.getElementById("selectAllScreen2") ? document.getElementById("selectAllScreen2").checked : false;
+        var checkboxes = document.querySelectorAll('.screen2-checkbox');
+        
+        for (var i = 0; i < checkboxes.length; i++) {
+          var cb = checkboxes[i];
+          cb.checked = isChecked;
+          var rowNum = parseInt(cb.getAttribute('data-row'));
+          if (isChecked) {
+            selectedRecordsForScreen2.add(rowNum);
+          } else {
+            selectedRecordsForScreen2.delete(rowNum);
+          }
+        }
+        
+        updateScreen2Selection();
+      }
+      
+      function updateScreen2Selection() {
+        var checkboxes = document.querySelectorAll('.screen2-checkbox');
+        var selectedCount = 0;
+        
+        for (var i = 0; i < checkboxes.length; i++) {
+          var cb = checkboxes[i];
+          var rowNum = parseInt(cb.getAttribute('data-row'));
+          if (cb.checked) {
+            selectedRecordsForScreen2.add(rowNum);
+            selectedCount++;
+          } else {
+            selectedRecordsForScreen2.delete(rowNum);
+          }
+        }
+        
+        document.getElementById("selectedCountDisplay").innerText = selectedCount;
+        
+        var withinQuota = selectedCount <= dailyQuota;
+        document.getElementById("sendBtn").disabled = (selectedCount === 0);
+        
+        var quotaDisplay = document.getElementById("quotaScreen2Display");
+        if (!withinQuota && dailyQuota > 0) {
+          quotaDisplay.className = "quota-warning";
+          document.getElementById("sendBtn").disabled = true;
+        } else {
+          quotaDisplay.className = "quota-info";
+        }
+      }
+      
+      function goToScreen1() {
+        document.getElementById("screen2").style.display = "none";
+        document.getElementById("screen1").style.display = "flex";
+        renderRecordsTable();
+      }
+      
+      // ==========================================
+      // FUNCTION: Send Emails
+      // ==========================================
+      function fireFinalAutomatedSend() {
+        var targetRowsList = [];
+        var iter = selectedRecordsForScreen2.values();
+        for (var it of iter) {
+          targetRowsList.push(it);
+        }
+        
+        if (targetRowsList.length === 0) {
+          alert("Please check at least 1 record checkbox before executing execution.");
+          return;
+        }
+        
+        if (targetRowsList.length > dailyQuota) {
+          alert("❌ Cannot send " + targetRowsList.length + " emails.\nDaily quota remaining: " + dailyQuota);
+          return;
+        }
+
+        var sendBtn = document.getElementById("sendBtn");
+        sendBtn.disabled = true;
+        sendBtn.innerText = "⏳ Dispatching mail loop...";
+
+        google.script.run
+          .withSuccessHandler(function(completionMsg) {
+            alert(completionMsg);
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            alert("❌ Error: " + error.message);
+            sendBtn.disabled = false;
+            sendBtn.innerText = "🚀 Send Now";
+          })
+          .RUN_FILTERED_PREVIEW_DISPATCH({ targetRows: targetRowsList });
+      }
+      
+  </script>
+</body>
+
+</html>

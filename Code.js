@@ -672,6 +672,7 @@ function executeEmailSend(selectedRows, emailConfig, templateName) {
       var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
       sheet.getRange(rowNum, statusColIdx + 1).setValue("Sent to " + recipient + " on " + timestamp);
       sent++;
+      CHECK_DAILY_QUOTA_ALERT(); // <-- Single line injection handles it!
     } catch (e) {
       errors.push("Row " + rowNum + ": " + e.message);
       sheet.getRange(rowNum, statusColIdx + 1).setValue("Failed: " + e.message);
@@ -863,6 +864,7 @@ function RUN_TEMPLATE(templateId) {
         var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
         sheet.getRange(rowNum, emailStatusColIdx + 1).setValue("Sent to " + recipient + " on " + timestamp + " (with PDF)");
         emailSentCount++;
+        CHECK_DAILY_QUOTA_ALERT(); // <-- Single line injection handles it!
       } catch (e) {
         errors.push("Row " + rowNum + ": " + e.message);
         sheet.getRange(rowNum, emailStatusColIdx + 1).setValue("Failed: " + e.message);
@@ -1433,6 +1435,7 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
       var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
       sheet.getRange(rowNum, statusColIdx + 1).setValue("Sent to " + recipient + " on " + timestamp + " (with PDF)");
       sent++;
+      CHECK_DAILY_QUOTA_ALERT(); // <-- Single line injection handles it!
     } catch (e) {
       errors.push("Row " + rowNum + ": " + e.message);
       sheet.getRange(rowNum, statusColIdx + 1).setValue("Failed: " + e.message);
@@ -1621,6 +1624,51 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
     console.log("Error updating sidebar sync token: " + err.message);
   }
 
+  // =======================================================
+  // NOTIFICATION EMAIL FOR TEMPLATE CREATION / UPDATE
+  // =======================================================
+  try {
+    var userEmail = Session.getActiveUser().getEmail();
+    if (userEmail) {
+      var templateName = template.name || "Unnamed Template";
+      
+      // 1. Map the internal template type to a clean display label
+      var typeDisplayMsg = "";
+      if (template.type === "PDF_ONLY") {
+        typeDisplayMsg = "📄 PDF Only";
+      } else if (template.type === "EMAIL_ONLY") {
+        typeDisplayMsg = "✉️ Email Only";
+      } else if (template.type === "BOTH") {
+        typeDisplayMsg = "🔄 PDF & Email";
+      } else {
+        typeDisplayMsg = template.type || "Standard Layout";
+      }
+      
+      // 2. Determine user-friendly schedule display mode
+      var runModeMsg = "";
+      if (schedule === "MANUAL") {
+        runModeMsg = 'Will run only "Manually"';
+      } else {
+        runModeMsg = 'Will run "Time Trigger" (Schedule: ' + schedule + ')';
+      }
+      
+      var emailSubject = "📄 DocuMail Pro: Template [" + templateName + "] Configured Successfully";
+      var emailBody = "Hello,\n\n" +
+                      "This is to confirm that your template configuration has been successfully saved.\n\n" +
+                      "Details:\n" +
+                      "▪️ Template Name: " + templateName + "\n" +
+                      "▪️ Template Type: " + typeDisplayMsg + "\n" + // <-- Dynamic Type Added!
+                      "▪️ Execution Mode: " + runModeMsg + "\n\n" +
+                      "Regards,\n" +
+                      "DocuMail Pro System Engine";
+                      
+      MailApp.sendEmail(userEmail, emailSubject, emailBody);
+      console.log("📨 Configuration confirmation email sent safely to: " + userEmail);
+    }
+  } catch (err) {
+    console.log("Could not send template configuration email: " + err.message);
+  }
+
   return {
     template: template,
     columnCreated: columnCreated,
@@ -1706,4 +1754,26 @@ function GET_TEMPLATE_BY_NAME(templateName) {
     }
   }
   return null;
+}
+
+/**
+ * Monitors the remaining daily email quota.
+ * Automatically fires a single alert email to the sender when exactly 10 slots remain.
+ */
+function CHECK_DAILY_QUOTA_ALERT() {
+  try {
+    if (MailApp.getRemainingDailyQuota() === 10) {
+      var senderInbox = Session.getActiveUser().getEmail();
+      if (senderInbox) {
+        MailApp.sendEmail(
+          senderInbox, 
+          "⚠️ Alert: Your Daily DocuMail Pro Email Quota is Running Low!",
+          "Hello,\n\nYou have already sent your standard volume for the day. There are only 10 emails pending/remaining for today before Google limits your execution thread.\n\nPlease plan your remaining bulk campaigns accordingly.\n\nRegards,\nDocuMail Pro Safety Monitor Engine"
+        );
+        console.log("🚨 Quota warning email dispatched successfully to: " + senderInbox);
+      }
+    }
+  } catch (qe) { 
+    console.log("Quota threshold check skipped safely: " + qe.message); 
+  }
 }

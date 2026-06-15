@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <base target="_top">
   <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
@@ -208,6 +209,7 @@
     }
   </style>
 </head>
+
 <body>
 
   <div class="sidebar-header">
@@ -236,9 +238,9 @@
       log("Loading templates...");
       var container = document.getElementById('templatesList');
       container.innerHTML = '<div class="loading-templates">⏳ Loading templates...</div>';
-      
+
       google.script.run
-        .withSuccessHandler(function(templates) {
+        .withSuccessHandler(function (templates) {
           log("Templates received: " + (templates ? templates.length : 0));
           if (!templates || templates.length === 0) {
             container.innerHTML = `
@@ -256,7 +258,7 @@
             var t = templates[i];
             var typeClass = '';
             var typeText = '';
-            
+
             if (t.type === 'PDF_ONLY') {
               typeClass = 'type-pdf';
               typeText = '📄 PDF Only';
@@ -267,14 +269,14 @@
               typeClass = 'type-both';
               typeText = '🔄 PDF & Email';
             }
-            
-            var safeName = (t.name || 'Unnamed').replace(/[&<>]/g, function(m) {
+
+            var safeName = (t.name || 'Unnamed').replace(/[&<>]/g, function (m) {
               if (m === '&') return '&amp;';
               if (m === '<') return '&lt;';
               if (m === '>') return '&gt;';
               return m;
             });
-            
+
             html += `
               <div class="template-card" data-id="` + t.id + `">
                 <div class="template-header">
@@ -293,7 +295,7 @@
           container.innerHTML = html;
           log("Templates rendered");
         })
-        .withFailureHandler(function(error) {
+        .withFailureHandler(function (error) {
           log("Error loading templates: " + error.message);
           container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading templates: ' + error.message + '</div></div>';
         })
@@ -304,11 +306,11 @@
       log("Delete template: " + id);
       if (confirm('Are you sure you want to delete template "' + name + '"?')) {
         google.script.run
-          .withSuccessHandler(function() {
+          .withSuccessHandler(function () {
             log("Template deleted: " + id);
             loadTemplates();
           })
-          .withFailureHandler(function(error) {
+          .withFailureHandler(function (error) {
             log("Error deleting template: " + error.message);
             alert("Error: " + error.message);
           })
@@ -319,10 +321,10 @@
     function createNewTemplate() {
       log("Create new template clicked");
       google.script.run
-        .withSuccessHandler(function() {
+        .withSuccessHandler(function () {
           log("Wizard opened successfully");
         })
-        .withFailureHandler(function(error) {
+        .withFailureHandler(function (error) {
           log("Error opening wizard: " + error.message);
           alert("Error: " + error.message);
         })
@@ -332,10 +334,10 @@
     function editTemplate(id) {
       log("Edit template: " + id);
       google.script.run
-        .withSuccessHandler(function() {
+        .withSuccessHandler(function () {
           log("Edit wizard opened for: " + id);
         })
-        .withFailureHandler(function(error) {
+        .withFailureHandler(function (error) {
           log("Error editing template: " + error.message);
           alert("Error: " + error.message);
         })
@@ -352,22 +354,43 @@
       google.script.run.SHOW_RUN_DIALOG(id);
     }
 
-    window.onload = function() {
+    // ==========================================
+    // STEP 1: ADD THIS GLOBAL LISTENER HERE
+    // ==========================================
+    window.notifySidebarToRefresh = function() {
+      log("🔔 Inter-window notification received! Reloading active layout template lists instantly...");
+      loadTemplates();
+    };
+
+    // Global messaging receiver to handle sandboxed cross-frame messages securely
+    window.addEventListener("message", function(event) {
+      if (event.data && event.data.action === "REFRESH_DOCUMAIL_SIDEBAR") {
+        log("📩 Received cross-frame postMessage signal! Intercepting sidebar refresh.");
+        loadTemplates();
+      }
+    });
+
+    window.onload = function () {
       log("Sidebar loaded");
       loadTemplates();
     };
 
     function checkForServerRefresh() {
-    google.script.run.withSuccessHandler(function(signal) {
-    if (signal && signal !== window.lastSignal) {
-    window.lastSignal = signal;
-    loadTemplates();
+      google.script.run.withSuccessHandler(function (signal) {
+        if (signal && signal !== window.lastSignal) {
+          window.lastSignal = signal;
+          loadTemplates();
+        }
+      }).CHECK_SIDEBAR_REFRESH();
     }
-    }).CHECK_SIDEBAR_REFRESH();
+
+    function notifySidebarToRefresh() {
+      loadTemplates(); // Directly reload templates
     }
-    
+
     // Check every 3 seconds
     setInterval(checkForServerRefresh, 3000);
   </script>
 </body>
+
 </html>

@@ -298,7 +298,8 @@
       let selectedRecordsForScreen2 = new Set();
       let dailyQuota = 0;
       let sheetHeaders = [];
-      
+      let templateName = null;
+          
       // ==========================================
       // FUNCTION: goBackToComposerWindow
       // ==========================================
@@ -309,6 +310,7 @@
       // ==========================================
       // FUNCTION: Load Data with Template
       // ==========================================
+      templateName = <?!= templateName ? JSON.stringify(templateName) : 'null' ?>;
       window.onload = function() {
         google.script.run
           .withSuccessHandler(function(previewBundle) {
@@ -326,7 +328,7 @@
           .withFailureHandler(function(error) {
             document.getElementById("recordsTableContainer").innerHTML = '<div class="loading">❌ Error: ' + error.message + '</div>';
           })
-          .GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE();
+          .GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName);
       };
       
       // ==========================================

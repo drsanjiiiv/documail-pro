@@ -303,19 +303,39 @@
     }
 
     function deleteTemplate(id, name) {
-      log("Delete template: " + id);
-      if (confirm('Are you sure you want to delete template "' + name + '"?')) {
-        google.script.run
-          .withSuccessHandler(function () {
-            log("Template deleted: " + id);
-            loadTemplates();
-          })
-          .withFailureHandler(function (error) {
-            log("Error deleting template: " + error.message);
-            alert("Error: " + error.message);
-          })
-          .DELETE_TEMPLATE(id);
-      }
+      log("Initiating check for template deletion: " + name);
+      
+      // 1. Run a silent server validation check first without changing any data
+      google.script.run
+        .withSuccessHandler(function (response) {
+          
+          // 2. If records are found, block the process right here
+          if (response && response.hasRecords === true) {
+            alert("⚠️ There are records for this template, can't be deleted.");
+            return;
+          }
+          
+          // 3. If NO records are found, ask for confirmation BEFORE deleting anything
+          if (confirm('Are you sure to delete this template "' + name + '"?')) {
+            
+            // 4. User clicked YES: Run the actual deletion sequence now
+            google.script.run
+              .withSuccessHandler(function () {
+                log("Template and empty column successfully deleted: " + id);
+                loadTemplates(); // Refresh sidebar UI layout
+              })
+              .withFailureHandler(function (err) {
+                alert("Error deleting template: " + err.message);
+              })
+              .DELETE_TEMPLATE(id);
+              
+          }
+        })
+        .withFailureHandler(function (error) {
+          log("Error checking records: " + error.message);
+          alert("Error: " + error.message);
+        })
+        .CHECK_TEMPLATE_RECORDS(id);
     }
 
     function createNewTemplate() {

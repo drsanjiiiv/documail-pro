@@ -68,6 +68,56 @@ function SAVE_TEMPLATE(template) {
 
 function DELETE_TEMPLATE(templateId) {
   var templates = GET_ALL_TEMPLATES();
+  var targetTemplate = null;
+  
+  for (var i = 0; i < templates.length; i++) {
+    if (templates[i].id === templateId) {
+      targetTemplate = templates[i];
+      break;
+    }
+  }
+  
+  if (!targetTemplate) {
+    throw new Error("Template not found.");
+  }
+  
+  // Clean up the empty status column now that deletion is authorized
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var lastColumn = sheet.getLastColumn();
+    
+    if (lastColumn > 0) {
+      var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+      var statusColumnName = ("Sent Mail Status - " + targetTemplate.name).toLowerCase().trim();
+      var targetColIndex = -1;
+      
+      for (var c = 0; c < headers.length; c++) {
+        if (String(headers[c]).toLowerCase().trim() === statusColumnName) {
+          targetColIndex = c + 1;
+          break;
+        }
+      }
+      
+      if (targetColIndex !== -1) {
+        var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+        var columnDescription = 'DocuMail Pro Status Column - ' + targetTemplate.name;
+        
+        for (var p = 0; p < protections.length; p++) {
+          if (protections[p].getDescription() === columnDescription) {
+            protections[p].remove();
+            break;
+          }
+        }
+        SpreadsheetApp.flush();
+        sheet.deleteColumn(targetColIndex);
+        console.log("🗑️ Column dropped successfully after confirmation.");
+      }
+    }
+  } catch (e) {
+    console.log("Non-blocking column drop error: " + e.message);
+  }
+  
+  // Filter out the template from cache database properties
   var filtered = [];
   for (var i = 0; i < templates.length; i++) {
     if (templates[i].id !== templateId) {
@@ -75,7 +125,8 @@ function DELETE_TEMPLATE(templateId) {
     }
   }
   PropertiesService.getDocumentProperties().setProperty('documail_templates', JSON.stringify(filtered));
-  return true;
+  
+  return { success: true };
 }
 
 function GET_TEMPLATE_BY_ID(templateId) {
@@ -142,12 +193,38 @@ function INITIALIZE_ADDON_SIDEBAR() {
 }
 
 // ==========================================
+// ==========================================
 // FUNCTION: GENERATE_DOCUMAIL_TEMPLATE Starts
 // ==========================================
 function GENERATE_DOCUMAIL_TEMPLATE() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
+  var ui = SpreadsheetApp.getUi();
 
+  // 1. DATA EXISTENCE CHECK: Warn user if sheet has pre-existing data
+  try {
+    var lastRow = sheet.getLastRow();
+    var lastColumn = sheet.getLastColumn();
+    
+    // If the sheet is not completely blank, prompt the custom confirmation warning
+    if (lastRow > 0 && lastColumn > 0) {
+      var response = ui.alert(
+        "⚠️ Warning", 
+        "There is data in your sheet. Initiating will remove all the data including column headers, are you sure?", 
+        ui.ButtonSet.YES_NO
+      );
+      
+      // If user clicks "No" or closes the dialog, stop execution safely
+      if (response !== ui.Button.YES) {
+        console.log("Initialization cancelled by user.");
+        return; 
+      }
+    }
+  } catch(e) {
+    console.log("Non-blocking data check warning error: " + e.message);
+  }
+
+  // 2. PROCEED WITH WIPE AND RENDER (Your exact working logic preserved safely)
   var existingProtections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
   for (var i = 0; i < existingProtections.length; i++) {
     existingProtections[i].remove();
@@ -159,15 +236,13 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
   sheet.clearContents();
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
 
-  // NEW: Base headers WITHOUT any status columns
+  // Base headers WITHOUT any status columns
   var headers = [
     "Name", "Company", "Designation", "Department",
     "Recipient Email",
     "Merged Doc Status",
     "Merged Doc ID",
     "Merged Doc URL"
-    // NOTE: NO "Sent Mail Status" columns here anymore
-    // They will be created dynamically by GET_OR_CREATE_STATUS_COLUMN()
   ];
 
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -186,7 +261,7 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
   var emailRange = sheet.getRange("E2:E1000");
   emailRange.setDataValidation(SpreadsheetApp.newDataValidation().requireTextIsEmail().setAllowInvalid(false).build());
 
-  // NEW: System columns range (F through H only - no status columns)
+  // System columns range (F through H only - no status columns)
   var systemRange = sheet.getRange("F2:H1000");
   systemRange.setBackground("#f3f3f3");
   systemRange.setFontColor("#888888");
@@ -194,7 +269,6 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
   sheet.getRange("F1").setNote("🔒 SYSTEM COLUMN - Auto-generated. Do not edit.");
   sheet.getRange("G1").setNote("🔒 SYSTEM COLUMN - Auto-generated Document ID");
   sheet.getRange("H1").setNote("🔒 SYSTEM COLUMN - Auto-generated Document URL");
-  // NOTE: I1 is now empty (no fixed status column)
 
   // Protect only F through H (PDF system columns)
   var protection = sheet.getRange("F1:H1000").protect();
@@ -208,7 +282,7 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
   sheet.setColumnWidth(5, 200);
   sheet.setColumnWidth(8, 300);
 
-  SpreadsheetApp.getUi().alert("✅ Sheet structure initialized successfully!\n\nDynamic status columns will be created automatically when you run email templates.");
+  ui.alert("✅ Sheet structure initialized successfully!\n\nDynamic status columns will be created automatically when you run email templates.");
 }
 
 // ==========================================
@@ -358,6 +432,58 @@ function SIGNAL_SIDEBAR_REFRESH() {
   } catch(e) {
     return false;
   }
+}
+
+/**
+ * STEP 1: ONLY checks if a template's status column contains any row data.
+ * Does NOT delete anything.
+ */
+function CHECK_TEMPLATE_RECORDS(templateId) {
+  var templates = GET_ALL_TEMPLATES();
+  var targetTemplate = null;
+  
+  for (var i = 0; i < templates.length; i++) {
+    if (templates[i].id === templateId) {
+      targetTemplate = templates[i];
+      break;
+    }
+  }
+  
+  if (!targetTemplate) return { hasRecords: false };
+
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var lastColumn = sheet.getLastColumn();
+    
+    if (lastColumn > 0) {
+      var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+      var statusColumnName = ("Sent Mail Status - " + targetTemplate.name).toLowerCase().trim();
+      var targetColIndex = -1;
+      
+      for (var c = 0; c < headers.length; c++) {
+        if (String(headers[c]).toLowerCase().trim() === statusColumnName) {
+          targetColIndex = c + 1;
+          break;
+        }
+      }
+      
+      if (targetColIndex !== -1) {
+        var lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          var dataRange = sheet.getRange(2, targetColIndex, lastRow - 1, 1).getValues();
+          for (var r = 0; r < dataRange.length; r++) {
+            if (String(dataRange[r][0]).trim() !== "") {
+              return { hasRecords: true }; // Data found!
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log("Error checking template rows: " + e.message);
+  }
+  
+  return { hasRecords: false }; // Safe (empty)
 }
 
 function GET_LIVE_SHEET_HEADERS() {

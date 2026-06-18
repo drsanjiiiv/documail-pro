@@ -15,6 +15,13 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
     var sheet = ss.getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
 
+     var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return "No data rows found. Please add data to your sheet.";
+    }
+    
+    var dataValues = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
+
     // Find column indices
     var docStatusColIdx = -1;
     var docIdColIdx = -1;
@@ -254,6 +261,9 @@ if (payload.tagMappings) {
 // FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW Starts
 // ==========================================
 function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, rowNum, allHeaders) {
+   if (!singleRowData || singleRowData.length === 0) {
+    return { success: false, error: "No data row provided." };  
+  }
   try {
     // Get template file ID
     var templateUrl = payload.templateUrl;
@@ -403,6 +413,14 @@ function EXTRACT_TEMPLATE_TAGS_STREAM(docUrl) {
     var tagMatchRegex = /\{([^}]+)\}/g;
     var matches = [];
     var matchItem;
+    
+     // Get valid headers (excludes system columns)
+    var validHeaders = GET_LIVE_SHEET_HEADERS();
+    var validHeaderSet = {};
+    for (var i = 0; i < validHeaders.length; i++) {
+      validHeaderSet[validHeaders[i].toLowerCase().trim()] = true;
+    }
+
     while ((matchItem = tagMatchRegex.exec(bodyText)) !== null) {
       var cleanToken = matchItem[1].trim();
       if (matches.indexOf(cleanToken) === -1) {
@@ -428,6 +446,24 @@ function PREVIEW_TEMPLATE(templateId) {
 
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
+
+     // =======================================================
+    // CHECK IF SHEET HAS DATA ROWS
+    // =======================================================
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return { 
+        name: template.name, 
+        previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 20px;">' +
+          '<h2 style="color:#c5221f;">❌ No Data Found</h2>' +
+          '<hr>' +
+          '<p>No data rows found in the sheet.</p>' +
+          '<p style="color:#5f6368;">Please add data to your sheet before previewing.</p>' +
+          '<div style="margin-top:20px; text-align:center;">' +
+          '<button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button>' +
+          '</div></div>'
+      };
+    }
 
     var emailColIdx = -1;
     for (var c = 0; c < allHeaders.length; c++) {
@@ -609,6 +645,15 @@ try {
 function RUN_TEMPLATE(templateId) {
   var template = GET_TEMPLATE_BY_ID(templateId);
   if (!template) return "Template not found";
+
+  // =======================================================
+  // CHECK IF SHEET HAS DATA ROWS
+  // =======================================================
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return "No data rows found. Please add data to your sheet before running the template.";
+  }
 
   if (template.type === "PDF_ONLY") {
     var config = JSON.parse(JSON.stringify(template.config));

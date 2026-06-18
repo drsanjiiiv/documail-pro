@@ -14,6 +14,7 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('DocuMail Pro Platform')
     .addItem('Initialize Sheet Structural Layout', 'GENERATE_DOCUMAIL_TEMPLATE')
+    .addItem('Create Doc Template From Sheet', 'CREATE_DOCUMENT_TEMPLATE_MENU')
     .addItem('Open Engine Workspace Control Sidebar', 'INITIALIZE_ADDON_SIDEBAR')
     .addToUi();
 }
@@ -25,6 +26,54 @@ function INITIALIZE_ADDON_SIDEBAR() {
   var html = HtmlService.createTemplateFromFile('SidebarView');
   var sidebarUi = html.evaluate().setTitle("DocuMail Pro").setSandboxMode(HtmlService.SandboxMode.IFRAME);
   SpreadsheetApp.getUi().showSidebar(sidebarUi);
+}
+
+// ==========================================
+// Function (CREATE_DOCUMENT_TEMPLATE_MENU) Starts
+// ==========================================
+
+function CREATE_DOCUMENT_TEMPLATE_MENU() {
+  var result = CREATE_DOCUMENT_TEMPLATE();
+  
+  var ui = SpreadsheetApp.getUi();
+  if (result.success) {
+    // Create HTML with Open button and link
+    var htmlOutput = HtmlService
+      .createHtmlOutput(
+        '<div style="font-family: Roboto, sans-serif; padding: 20px; text-align: center;">' +
+        '<h2 style="color: #1a73e8;">✅ Template Created</h2>' +
+        '<p><strong>📄 ' + result.name + '</strong></p>' +
+        '<p><strong>📁 Saved in:</strong> ' + result.folder + '</p>' +
+        '<br>' +
+        '<a href="' + result.url + '" target="_blank" style="' +
+        'background-color: #1a73e8; color: white; padding: 12px 24px; ' +
+        'text-decoration: none; border-radius: 4px; font-weight: bold; ' +
+        'display: inline-block; margin: 10px 0;">' +
+        '📂 Open Template to Edit</a>' +
+        '<br><br>' +
+        '<button onclick="google.script.host.close()" style="' +
+        'background-color: #f1f3f4; border: 1px solid #dadce0; ' +
+        'padding: 8px 16px; border-radius: 4px; cursor: pointer;">' +
+        'Close</button>' +
+        '<br><br>' +
+        '<p style="font-size: 12px; color: #5f6368;">' +
+        '⚠️ Edit your template, then close it and use "Browse Google Drive" in the wizard to select it.' +
+        '</p>' +
+        '</div>'
+      )
+      .setWidth(450)
+      .setHeight(320)
+      .setTitle('Template Created');
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Template Created');
+    
+  } else {
+    ui.alert(
+      "❌ Error Creating Template",
+      result.error,
+      ui.ButtonSet.OK
+    );
+  }
 }
 
 // ==========================================
@@ -68,13 +117,13 @@ function SHOW_PREVIEW_DIALOG(templateId) {
   loadingHtml += '<p style="color: #5f6368;">Please wait, this may take a few seconds.</p>';
   loadingHtml += '<style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>';
   loadingHtml += '</div>';
-  
+
   var loadingDialog = HtmlService.createHtmlOutput(loadingHtml)
     .setWidth(650)
     .setHeight(550)
     .setTitle('Processing...');
   SpreadsheetApp.getUi().showModalDialog(loadingDialog, 'Processing...');
-  
+
   // =======================================================
   // PROCESS IN BACKGROUND
   // =======================================================
@@ -83,7 +132,7 @@ function SHOW_PREVIEW_DIALOG(templateId) {
     if (template && (template.type === "PDF_ONLY" || template.type === "BOTH")) {
       var config = JSON.parse(JSON.stringify(template.config));
       config.isPreview = true;
-      
+
       // FIX: ENSURE TAG MAPPINGS EXIST
       if (!config.tagMappings || Object.keys(config.tagMappings).length === 0) {
         var allHeaders = GET_ALL_RAW_HEADERS();
@@ -95,13 +144,13 @@ function SHOW_PREVIEW_DIALOG(templateId) {
           }
         }
       }
-      
+
       EXECUTE_DOCUMENT_MERGE_ENGINE(config);
     }
   } catch (e) {
     // Continue - show preview even if file generation fails
   }
-  
+
   // =======================================================
   // SHOW PREVIEW POPUP
   // =======================================================
@@ -114,8 +163,8 @@ function SHOW_PREVIEW_DIALOG(templateId) {
 }
 
 // =======================================================
-  // SHOW RUN DIALOG
-  // =======================================================
+// SHOW RUN DIALOG
+// =======================================================
 
 function SHOW_RUN_DIALOG(templateId) {
   // =======================================================
@@ -128,13 +177,13 @@ function SHOW_RUN_DIALOG(templateId) {
   loadingHtml += '<p style="color: #5f6368;">Please wait, processing your request.</p>';
   loadingHtml += '<style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>';
   loadingHtml += '</div>';
-  
+
   var loadingDialog = HtmlService.createHtmlOutput(loadingHtml)
     .setWidth(650)
     .setHeight(550)
     .setTitle('Processing...');
   SpreadsheetApp.getUi().showModalDialog(loadingDialog, 'Processing...');
-  
+
   // =======================================================
   // PROCESS IN BACKGROUND
   // =======================================================
@@ -177,7 +226,19 @@ function SHOW_RUN_DIALOG(templateId) {
   var usedQuota = totalQuota - remainingQuota;
 
   var result = RUN_TEMPLATE(templateId);
- 
+
+  // =======================================================
+  // CHECK IF RESULT IS AN ERROR MESSAGE
+  // =======================================================
+  var isError = false;
+  var errorKeywords = ["No data rows found", "Error:", "Template not found", "No eligible records", "Failed", "No rows match"];
+  for (var i = 0; i < errorKeywords.length; i++) {
+    if (result && result.indexOf(errorKeywords[i]) !== -1) {
+      isError = true;
+      break;
+    }
+  }
+
   // =======================================================
   // GET FILE URLS (FOR PDF)
   // =======================================================
@@ -209,11 +270,17 @@ function SHOW_RUN_DIALOG(templateId) {
     }
   }
 
-  // =======================================================
+   // =======================================================
   // SHOW RESULT POPUP
   // =======================================================
   var html = '<div style="font-family: Roboto, sans-serif; padding: 20px;">';
-  html += '<h2 style="color:#1a73e8;">✅ Execution Completed!</h2>';
+  
+  if (isError) {
+    html += '<h2 style="color:#c5221f;">❌ Execution Failed</h2>';
+  } else {
+    html += '<h2 style="color:#1a73e8;">✅ Execution Completed!</h2>';
+  }
+  
   html += '<hr>';
   html += '<p><strong>📄 Template:</strong> ' + escapeHtml(template.name) + '</p>';
   html += '<p><strong>📋 Type:</strong> ' + (template.type === "PDF_ONLY" ? "PDF Only" : template.type === "EMAIL_ONLY" ? "Email Only" : "PDF & Email") + '</p>';
@@ -226,10 +293,19 @@ function SHOW_RUN_DIALOG(templateId) {
     html += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">📅 Resets every 24 hours</p>';
     html += '</div>';
   }
-
-  html += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0;">';
-  html += '<strong>📝 Result:</strong><br>' + String(result).replace(/\n/g, '<br>');
-  html += '</div>';
+   // =======================================================
+  // SHOW RESULT WITH RED BACKGROUND FOR ERRORS
+  // =======================================================
+  if (isError) {
+    html += '<div style="background:#fce8e6; padding:12px; border-radius:6px; margin:10px 0; border-left:4px solid #c5221f;">';
+    html += '<strong style="color:#c5221f;">📝 Error:</strong><br>';
+    html += '<span style="color:#c5221f;">' + String(result).replace(/\n/g, '<br>') + '</span>';
+    html += '</div>';
+  } else {
+    html += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0;">';
+    html += '<strong>📝 Result:</strong><br>' + String(result).replace(/\n/g, '<br>');
+    html += '</div>';
+  }
 
   // Show file links if any
   if (fileUrls.length > 0) {
@@ -254,9 +330,9 @@ function SHOW_RUN_DIALOG(templateId) {
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Execution Result: ' + template.name);
 }
 
-  // =======================================================
-  // SHOW NOTIFICATION FUNCTIONS
-  // =======================================================
+// =======================================================
+// SHOW NOTIFICATION FUNCTIONS
+// =======================================================
 
 function SHOW_NOTIFICATION(title, message, type) {
   var icon = type === "success" ? "✅" : (type === "warning" ? "⚠️" : "ℹ️");
@@ -312,9 +388,9 @@ function SHOW_TEMPLATE_SAVED_NOTIFICATION(templateName, columnCreated, columnExi
   }
 }
 
-  // =======================================================
-  // AUTO MATCH TAGS FUNCTION 
-  // =======================================================
+// =======================================================
+// AUTO MATCH TAGS FUNCTION 
+// =======================================================
 
 function AUTO_MATCH_TAGS(docUrl) {
   try {
@@ -322,6 +398,13 @@ function AUTO_MATCH_TAGS(docUrl) {
     var headers = GET_LIVE_SHEET_HEADERS();
     var matched = [];
     var unmatched = [];
+
+    // Build a lookup map for headers
+    var headerMap = {};
+    for (var i = 0; i < headers.length; i++) {
+      headerMap[headers[i].toLowerCase().trim()] = headers[i];
+    }
+
     for (var i = 0; i < tags.length; i++) {
       var tag = tags[i];
       var matchedHeader = null;
@@ -342,4 +425,154 @@ function AUTO_MATCH_TAGS(docUrl) {
     return { success: false, error: e.message };
   }
 }
+
+// ==========================================
+// FUNCTION: CREATE_DOCUMENT_TEMPLATE
+// Creates a new Google Doc in the same folder as the spreadsheet
+// ==========================================
+function CREATE_DOCUMENT_TEMPLATE() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getActiveSheet();
+    var sheetName = sheet.getName();
+    
+    // Get the spreadsheet's parent folder
+    var ssFile = DriveApp.getFileById(ss.getId());
+    var parentFolders = ssFile.getParents();
+    var parentFolder = null;
+    
+    if (parentFolders.hasNext()) {
+      parentFolder = parentFolders.next();
+    } else {
+      parentFolder = DriveApp.getRootFolder();
+    }
+    
+    // =======================================================
+    // CREATE DEDICATED FOLDER: DocuMail PRO Templates
+    // =======================================================
+    var folderName = "DocuMail PRO Templates";
+    var templateFolder = null;
+    var existingFolders = parentFolder.getFoldersByName(folderName);
+    
+    if (existingFolders.hasNext()) {
+      templateFolder = existingFolders.next();
+    } else {
+      templateFolder = parentFolder.createFolder(folderName);
+    }
+    
+    // Get all headers from the sheet (exclude system columns)
+    var headers = GET_LIVE_SHEET_HEADERS();
+    
+    // Create document name
+    var docName = "DocTemplate for " + sheetName;
+    
+    // Create the Google Doc
+    var doc = DocumentApp.create(docName);
+    var docId = doc.getId();
+    var docFile = DriveApp.getFileById(docId);
+    
+    // Move the document to the template folder
+    templateFolder.addFile(docFile);
+    DriveApp.getRootFolder().removeFile(docFile);
+    
+    var body = doc.getBody();
+    
+    // =======================================================
+    // HEADER: Instruction
+    // =======================================================
+    var instruction = body.appendParagraph(
+      "Following tags are available from your Sheet. Copy & paste them wherever you want to use. You can use all available tags more than once also if required."
+    );
+    instruction.setFontSize(14);
+    instruction.setFontFamily("Calibri");
+    instruction.setBold(true);
+    instruction.setForegroundColor("#1A73E8");
+    
+    body.appendParagraph("");
+    
+    // =======================================================
+    // TAGS: All in one line
+    // =======================================================
+    var tagText = "📋 TAGS: ";
+    var tagArray = [];
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] && headers[i].toString().trim() !== "") {
+        tagArray.push("{" + headers[i].toString().trim() + "}");
+      }
+    }
+    tagText += tagArray.join(" ");
+    
+    var tagsPara = body.appendParagraph(tagText);
+    tagsPara.setFontSize(14);
+    tagsPara.setFontFamily("Calibri");
+    tagsPara.setForegroundColor("#137333");
+    tagsPara.setBold(true);
+    
+    body.appendParagraph("");
+    body.appendParagraph("");
+    
+    // =======================================================
+    // NOTE: About multiple templates
+    // =======================================================
+    var noteText = body.appendParagraph(
+      "Note: If you have more than one Doc Template for the same Sheet, please ensure to rename the Doc Template to avoid confusion."
+    );
+    noteText.setFontSize(12);
+    noteText.setFontFamily("Calibri");
+    noteText.setForegroundColor("#5F6368");
+    noteText.setItalic(true);
+    
+    body.appendParagraph("");
+    body.appendParagraph("");
+    
+    // =======================================================
+    // FOOTER: Remove instruction
+    // =======================================================
+    var footerText = body.appendParagraph(
+      "Please write your conetnt below the lines and don't forget to delete the content from dotted line included and above once your document is complete"
+    );
+    footerText.setFontSize(12);
+    footerText.setFontFamily("Calibri");
+    footerText.setBold(true);
+    footerText.setItalic(true);
+    footerText.setUnderline(true);
+    footerText.setForegroundColor("#D93025");
+    
+    // =======================================================
+    // DOTTED LINE - Full page width
+    // =======================================================
+    var dottedLine = body.appendParagraph(
+      "─────────────────────────────────────────────────────────────────────────────────"
+    );
+    dottedLine.setFontSize(6);
+    dottedLine.setForegroundColor("#999999");
+    dottedLine.setSpacingAfter(0);
+    dottedLine.setSpacingBefore(0);
+    
+    // Save and get URL
+    doc.saveAndClose();
+    var docUrl = doc.getUrl();
+    
+    console.log("✅ Template created: " + docName + " - " + docUrl);
+    console.log("📁 Saved in folder: " + templateFolder.getName());
+    
+    return {
+      success: true,
+      url: docUrl,
+      id: docId,
+      name: docName,
+      folder: templateFolder.getName()
+    };
+    
+  } catch (e) {
+    console.error("Error creating document template: " + e.message);
+    return {
+      success: false,
+      error: e.message
+    };
+  }
+}
+
+
+
 //file content end

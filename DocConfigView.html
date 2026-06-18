@@ -420,6 +420,7 @@
 
     <!-- CONTENT -->
     <div class="wizard-content">
+
       <!-- STEP 1: Template Name & Type -->
       <div class="step-panel active" id="panelStep1" data-visible="true">
         <p class="instruction-text">Give your template a unique name and choose what it should do.</p>
@@ -455,24 +456,21 @@
           <button type="button" class="blue" id="pickerLaunchBtn" onclick="launchNativeGoogleDrivePicker('DOCS')">📂
             Browse Google Drive</button>
         </div>
-        <div id="fileSelectionMetaDisplay" style="font-size:12px; font-weight:bold; color:#137333; margin-top:8px;">
-          Click Browse to select a template</div>
+        <div id="fileSelectionMetaDisplay" style="font-size:12px; font-weight:bold; color:#5f6368; margin-top:8px;">
+          📂 Click Browse to select a template or Create a new one.
+        </div>
       </div>
 
       <!-- STEP 3: Map Tags -->
       <div class="step-panel" id="panelStep3" data-visible="true" data-pdf-step="true">
         <p class="instruction-text">Review tags found in your document and map them to spreadsheet columns.</p>
-
-        <!-- Mapping Header -->
         <div class="mapping-header">
           <h3>📋 Tag Mappings</h3>
           <span id="mappingStatusBadge" class="status-badge" style="display:none;"></span>
         </div>
-
         <div id="mismatchWarning" class="alert-box">⚠️ Please map all tags before proceeding.</div>
         <div id="noTagsWarning" class="error-box">❌ No tags found in document template!</div>
         <div id="matchSuccessBox" class="success-box">✅ All tags matched successfully!</div>
-
         <table class="mapping-table">
           <thead>
             <tr>
@@ -587,7 +585,9 @@
         <div><label><input type="radio" name="schedule" value="720"> Every 12 hours</label></div>
         <div><label><input type="radio" name="schedule" value="1440"> Every 24 hours</label></div>
       </div>
+
     </div>
+    <!-- END wizard-content -->
 
     <!-- FOOTER -->
     <div class="wizard-footer">
@@ -597,7 +597,9 @@
         <button class="blue" id="nextBtn" onclick="handleNavigationNext()">Next</button>
       </div>
     </div>
+
   </div>
+  <!-- END modal-wrapper -->
 
   <!-- ==========================================
        BLOCK: SCRIPTS - EXTERNAL LIBRARIES
@@ -950,12 +952,56 @@
        BLOCK: SCRIPTS - NAVIGATION
        ========================================== -->
   <script>
+
+    function autoSaveCurrentStep() {
+  var step = currentStepIndex;
+  
+  if (isFinishing) return;
+  if (step === 1 && isEditMode) {
+    return;
+  }
+  
+  var templateData = collectTemplateData();
+  var templateId = editingTemplateId || null;  // ← Use existing ID if available
+  
+  // Don't save if no template name
+  if (!templateData.name || templateData.name.trim() === "") {
+    return;
+  }
+  
+  // =======================================================
+  // FIX: Use the existing template ID to UPDATE, not CREATE
+  // =======================================================
+  google.script.run
+    .withSuccessHandler(function(saved) {
+      if (saved && saved.template && saved.template.id) {
+        editingTemplateId = saved.template.id;  // ← Capture ID after first save
+        isEditMode = true;
+        google.script.run.withSuccessHandler(function(templates) {
+          existingTemplates = templates || [];
+        }).GET_ALL_TEMPLATES();
+        console.log("✅ Auto-saved Step " + step + " (ID: " + editingTemplateId + ")");
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.log("⚠️ Auto-save failed for Step " + step + ": " + err.message);
+    })
+    .SAVE_TEMPLATE_WITH_SCHEDULE(templateData, "MANUAL", templateId);  // ← Pass templateId
+}
+
+
     function handleNavigationNext() {
       var nextBtn = document.getElementById('nextBtn');
       if (nextBtn && nextBtn.innerText.trim() === "Finish") {
         finishTemplate();
         return;
       }
+
+      // =======================================================
+      // FIX: Auto-save current step before moving to next
+      // =======================================================
+      autoSaveCurrentStep();
+
       if (!validateCurrentStep(currentStepIndex)) return;
       var nextTarget = currentStepIndex + 1;
       while (nextTarget <= totalStepsCount) {
@@ -987,6 +1033,12 @@
     }
 
     function goToStep(step) {
+
+      // Show a subtle indicator that data was saved
+      if (step > 1) {
+        showToast("✅ Step " + (step - 1) + " saved");
+      }
+
       if (step < 1 || step > totalStepsCount) return;
       var currentPanel = document.getElementById("panelStep" + currentStepIndex);
       if (currentPanel) currentPanel.classList.remove("active");
@@ -1296,8 +1348,9 @@
     }
 
     function collectTemplateData() {
-      var templateName = document.getElementById('templateName').value;
-      var templateType = document.querySelector('input[name="templateType"]:checked').value;
+      var templateName = document.getElementById('templateName')?.value || "";
+      var templateType = document.querySelector('input[name="templateType"]:checked')?.value || selectedType || "PDF_ONLY";
+
       var emailConfig = {};
       if (templateType === "EMAIL_ONLY" || templateType === "BOTH") {
         emailConfig = {
@@ -1306,20 +1359,22 @@
           replyTo: document.getElementById('emailReplyTo')?.value || "",
           cc: document.getElementById('emailCc')?.value || "",
           bcc: document.getElementById('emailBcc')?.value || "",
-          driveAttachments: activeDriveLinksCache,
-          localAttachments: activeLocalFilesCache
+          driveAttachments: activeDriveLinksCache || [],
+          localAttachments: activeLocalFilesCache || []
         };
       }
+
       var config = {
         condField: document.getElementById('mergeConditionField')?.value || "",
         condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY",
         condValue: document.getElementById('mergeConditionValue')?.value || "",
-        docTemplateUrl: document.getElementById('docTemplateUrl')?.value || "",
+        templateUrl: document.getElementById('docTemplateUrl')?.value || "",
         folderDestination: document.getElementById('targetFolderInput')?.value || "",
         format: document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF",
         namePattern: document.getElementById('fileNamePattern')?.value || "",
-        tagMappings: getTagMappings()
+        tagMappings: getTagMappings() || {}
       };
+
       return {
         name: templateName,
         type: templateType,
@@ -1536,7 +1591,17 @@
             opt.innerText = h;
             condSelect.appendChild(opt);
           });
-        }
+
+           // =======================================================
+    // FIX: Set default to "Recipient Email" if exists
+    // =======================================================
+    for (var i = 0; i < condSelect.options.length; i++) {
+      if (condSelect.options[i].value.toLowerCase().indexOf("recipient email") !== -1) {
+        condSelect.value = condSelect.options[i].value;
+        break;
+      }
+    }
+  }
 
         var tagsContainer = document.getElementById('fileNameTagsContainer');
         if (tagsContainer) {

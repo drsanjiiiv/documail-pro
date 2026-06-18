@@ -236,24 +236,50 @@ function GET_LIVE_SHEET_HEADERS() {
   try {
     var rawHeaders = GET_ALL_RAW_HEADERS();
     var result = [];
+    var foundRecipientEmail = false;
+    
     for (var i = 0; i < rawHeaders.length; i++) {
       var hStr = String(rawHeaders[i]).toLowerCase().trim();
       if (hStr === "") continue;
-      if (hStr.indexOf("recipient email") !== -1) continue;
+      
+      // Skip Recipient Email and everything after it
+      if (hStr.indexOf("recipient email") !== -1) {
+        foundRecipientEmail = true;
+        continue;
+      }
+      if (foundRecipientEmail) {
+        continue; // Skip all columns after Recipient Email
+      }
+      
+      // Skip Merged Doc columns (just in case)
       if (hStr.indexOf("merged doc") !== -1) continue;
-      // NEW: Exclude ANY column that starts with "sent mail status"
+      // Skip Sent Mail Status columns
       if (hStr.indexOf("sent mail status") !== -1) continue;
+      
       result.push(rawHeaders[i]);
     }
     return result;
   } catch (e) {
-    // UPDATED: Safe fallback defaults matching your new 4 column baseline layout
     return ["Column 1", "Column 2", "Column 3", "Column 4"];
   }
 }
 
 function GET_WIZARD_INITIALIZATION_PAYLOAD() {
-  return { userHeaders: GET_LIVE_SHEET_HEADERS() };
+  var headers = GET_LIVE_SHEET_HEADERS();
+  
+  // Find Recipient Email column as default
+  var defaultField = "";
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i].toLowerCase().indexOf("recipient email") !== -1) {
+      defaultField = headers[i];
+      break;
+    }
+  }
+  
+  return {
+    userHeaders: headers,
+    defaultField: defaultField
+  };
 }
 
 /**

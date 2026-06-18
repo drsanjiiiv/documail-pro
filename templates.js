@@ -296,15 +296,12 @@ function GET_TEMPLATE_BY_NAME(templateName) {
 }
 
 function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
-  var key = GET_TEMPLATES_KEY();
-  var refreshKey = GET_REFRESH_KEY();
-  
-  // First, save/update the template
   var templates = GET_ALL_TEMPLATES();
   var existingIndex = -1;
   var template = templateData;
   var isNewTemplate = false;
 
+  // If templateId exists, find and update it
   if (templateId) {
     template.id = templateId;
     for (var i = 0; i < templates.length; i++) {
@@ -316,17 +313,20 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   }
 
   if (existingIndex !== -1) {
+    // UPDATE existing template
     templates[existingIndex] = template;
   } else {
+    // CREATE new template
     template.id = generateUUID();
     templates.push(template);
     isNewTemplate = true;
   }
 
-  // Add schedule to template
+  // Add schedule
   template.schedule = schedule;
 
-  // Save to properties (PER TAB)
+  // Save to properties
+  var key = GET_TEMPLATES_KEY();
   PropertiesService.getDocumentProperties().setProperty(key, JSON.stringify(templates));
 
   // Check/create status column

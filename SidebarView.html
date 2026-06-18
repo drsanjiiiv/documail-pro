@@ -4,6 +4,10 @@
 <head>
   <base target="_top">
   <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+  
+  <!-- ==========================================
+       BLOCK: STYLES
+       ========================================== -->
   <style>
     * {
       box-sizing: border-box;
@@ -207,11 +211,21 @@
       padding: 40px;
       color: #5f6368;
     }
+
+    .error-msg {
+      color: #d93025;
+      background: #fce8e6;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
   </style>
 </head>
 
 <body>
-
+  <!-- ==========================================
+       BLOCK: HTML STRUCTURE
+       ========================================== -->
   <div class="sidebar-header">
     <h2>📄 DocuMail Pro</h2>
     <p>Manage your document & email templates</p>
@@ -229,20 +243,31 @@
     </button>
   </div>
 
+  <!-- ==========================================
+       BLOCK: SCRIPTS - CORE LOGIC
+       ========================================== -->
   <script>
+    // ==========================================
+    // BLOCK: LOGGING UTILITY
+    // ==========================================
     function log(msg) {
       console.log("[Sidebar] " + msg);
     }
 
+    // ==========================================
+    // BLOCK: LOAD TEMPLATES
+    // ==========================================
     function loadTemplates() {
       log("Loading templates...");
       var container = document.getElementById('templatesList');
       container.innerHTML = '<div class="loading-templates">⏳ Loading templates...</div>';
 
       google.script.run
-        .withSuccessHandler(function (templates) {
+        .withSuccessHandler(function(templates) {
           log("Templates received: " + (templates ? templates.length : 0));
-          if (!templates || templates.length === 0) {
+          
+          // FIX: Check if templates is null, undefined, or not an array
+          if (!templates || !Array.isArray(templates) || templates.length === 0) {
             container.innerHTML = `
               <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
@@ -270,7 +295,7 @@
               typeText = '🔄 PDF & Email';
             }
 
-            var safeName = (t.name || 'Unnamed').replace(/[&<>]/g, function (m) {
+            var safeName = (t.name || 'Unnamed').replace(/[&<>]/g, function(m) {
               if (m === '&') return '&amp;';
               if (m === '<') return '&lt;';
               if (m === '>') return '&gt;';
@@ -295,43 +320,46 @@
           container.innerHTML = html;
           log("Templates rendered");
         })
-        .withFailureHandler(function (error) {
+        .withFailureHandler(function(error) {
           log("Error loading templates: " + error.message);
-          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading templates: ' + error.message + '</div></div>';
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">⚠️</div>
+              <div>Error loading templates</div>
+              <div style="font-size: 12px; margin-top: 8px; color: #d93025;">` + error.message + `</div>
+              <button onclick="loadTemplates()" style="margin-top:12px; padding:8px 16px; background:#1a73e8; color:white; border:none; border-radius:4px; cursor:pointer;">🔄 Retry</button>
+            </div>
+          `;
         })
         .GET_ALL_TEMPLATES();
     }
 
+    // ==========================================
+    // BLOCK: TEMPLATE ACTIONS
+    // ==========================================
     function deleteTemplate(id, name) {
       log("Initiating check for template deletion: " + name);
       
-      // 1. Run a silent server validation check first without changing any data
       google.script.run
-        .withSuccessHandler(function (response) {
-          
-          // 2. If records are found, block the process right here
+        .withSuccessHandler(function(response) {
           if (response && response.hasRecords === true) {
             alert("⚠️ There are records for this template, can't be deleted.");
             return;
           }
           
-          // 3. If NO records are found, ask for confirmation BEFORE deleting anything
           if (confirm('Are you sure to delete this template "' + name + '"?')) {
-            
-            // 4. User clicked YES: Run the actual deletion sequence now
             google.script.run
-              .withSuccessHandler(function () {
+              .withSuccessHandler(function() {
                 log("Template and empty column successfully deleted: " + id);
-                loadTemplates(); // Refresh sidebar UI layout
+                loadTemplates();
               })
-              .withFailureHandler(function (err) {
+              .withFailureHandler(function(err) {
                 alert("Error deleting template: " + err.message);
               })
               .DELETE_TEMPLATE(id);
-              
           }
         })
-        .withFailureHandler(function (error) {
+        .withFailureHandler(function(error) {
           log("Error checking records: " + error.message);
           alert("Error: " + error.message);
         })
@@ -341,10 +369,10 @@
     function createNewTemplate() {
       log("Create new template clicked");
       google.script.run
-        .withSuccessHandler(function () {
+        .withSuccessHandler(function() {
           log("Wizard opened successfully");
         })
-        .withFailureHandler(function (error) {
+        .withFailureHandler(function(error) {
           log("Error opening wizard: " + error.message);
           alert("Error: " + error.message);
         })
@@ -354,10 +382,10 @@
     function editTemplate(id) {
       log("Edit template: " + id);
       google.script.run
-        .withSuccessHandler(function () {
+        .withSuccessHandler(function() {
           log("Edit wizard opened for: " + id);
         })
-        .withFailureHandler(function (error) {
+        .withFailureHandler(function(error) {
           log("Error editing template: " + error.message);
           alert("Error: " + error.message);
         })
@@ -366,23 +394,38 @@
 
     function previewTemplate(id) {
       log("Preview template: " + id);
-      google.script.run.SHOW_PREVIEW_DIALOG(id);
+      google.script.run
+        .withSuccessHandler(function() {
+          log("Preview opened for: " + id);
+        })
+        .withFailureHandler(function(error) {
+          log("Error previewing template: " + error.message);
+          alert("Error: " + error.message);
+        })
+        .SHOW_PREVIEW_DIALOG(id);
     }
 
     function runTemplate(id) {
       log("Run template: " + id);
-      google.script.run.SHOW_RUN_DIALOG(id);
+      google.script.run
+        .withSuccessHandler(function() {
+          log("Run executed for: " + id);
+        })
+        .withFailureHandler(function(error) {
+          log("Error running template: " + error.message);
+          alert("Error: " + error.message);
+        })
+        .SHOW_RUN_DIALOG(id);
     }
 
     // ==========================================
-    // STEP 1: ADD THIS GLOBAL LISTENER HERE
+    // BLOCK: NOTIFICATION & REFRESH HANDLERS
     // ==========================================
     window.notifySidebarToRefresh = function() {
       log("🔔 Inter-window notification received! Reloading active layout template lists instantly...");
       loadTemplates();
     };
 
-    // Global messaging receiver to handle sandboxed cross-frame messages securely
     window.addEventListener("message", function(event) {
       if (event.data && event.data.action === "REFRESH_DOCUMAIL_SIDEBAR") {
         log("📩 Received cross-frame postMessage signal! Intercepting sidebar refresh.");
@@ -390,25 +433,35 @@
       }
     });
 
-    window.onload = function () {
+    function checkForServerRefresh() {
+      google.script.run
+        .withSuccessHandler(function(signal) {
+          if (signal && signal !== window.lastSignal) {
+            window.lastSignal = signal;
+            loadTemplates();
+          }
+        })
+        .withFailureHandler(function(error) {
+          log("Refresh check error: " + error.message);
+        })
+        .CHECK_SIDEBAR_REFRESH();
+    }
+
+    function notifySidebarToRefresh() {
+      loadTemplates();
+    }
+
+    // ==========================================
+    // BLOCK: WINDOW ONLOAD
+    // ==========================================
+    window.onload = function() {
       log("Sidebar loaded");
       loadTemplates();
     };
 
-    function checkForServerRefresh() {
-      google.script.run.withSuccessHandler(function (signal) {
-        if (signal && signal !== window.lastSignal) {
-          window.lastSignal = signal;
-          loadTemplates();
-        }
-      }).CHECK_SIDEBAR_REFRESH();
-    }
-
-    function notifySidebarToRefresh() {
-      loadTemplates(); // Directly reload templates
-    }
-
-    // Check every 3 seconds
+    // ==========================================
+    // BLOCK: POLLING FOR REFRESH
+    // ==========================================
     setInterval(checkForServerRefresh, 3000);
   </script>
 </body>

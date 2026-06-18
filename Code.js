@@ -311,4 +311,35 @@ function SHOW_TEMPLATE_SAVED_NOTIFICATION(templateName, columnCreated, columnExi
     );
   }
 }
+
+  // =======================================================
+  // AUTO MATCH TAGS FUNCTION 
+  // =======================================================
+
+function AUTO_MATCH_TAGS(docUrl) {
+  try {
+    var tags = EXTRACT_TEMPLATE_TAGS_STREAM(docUrl);
+    var headers = GET_LIVE_SHEET_HEADERS();
+    var matched = [];
+    var unmatched = [];
+    for (var i = 0; i < tags.length; i++) {
+      var tag = tags[i];
+      var matchedHeader = null;
+      for (var h = 0; h < headers.length; h++) {
+        if (headers[h].toLowerCase().trim() === tag.toLowerCase().trim()) {
+          matchedHeader = headers[h];
+          break;
+        }
+      }
+      if (matchedHeader) {
+        matched.push({ tag: tag, header: matchedHeader });
+      } else {
+        unmatched.push(tag);
+      }
+    }
+    return { success: true, matched: matched, unmatched: unmatched };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
 //file content end

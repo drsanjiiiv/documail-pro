@@ -1,4 +1,3 @@
-/**file name: sheet.gs
 /**
  * ============================================================================
  * DOCUMAIL PRO COMPLETE MASTER CORE SCRIPT
@@ -15,129 +14,208 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
   var sheet = ss.getActiveSheet();
   var ui = SpreadsheetApp.getUi();
 
-  // 1. DATA EXISTENCE CHECK: Warn user if sheet has pre-existing data
-  try {
-    var lastRow = sheet.getLastRow();
-    var lastColumn = sheet.getLastColumn();
-    
-    if (lastRow > 0 && lastColumn > 0) {
-      var response = ui.alert(
-        "⚠️ Warning", 
-        "There is data in your sheet. Initiating will remove all data, column headers, AND all saved templates. Are you sure?", 
-        ui.ButtonSet.YES_NO
-      );
-      
-      if (response !== ui.Button.YES) {
-        console.log("Initialization cancelled by user.");
-        return; 
-      }
-    }
-  } catch(e) {
-    console.log("Non-blocking data check warning error: " + e.message);
+  // =======================================================
+  // SAFETY CHECK: Block if sheet has data rows
+  // =======================================================
+  var lastRow = sheet.getLastRow();
+  var lastColumn = sheet.getLastColumn();
+
+  // If there is data in rows (beyond header row)
+  if (lastRow > 1) {
+    ui.alert(
+      "❌ Cannot Initialize Sheet Template",
+      "This sheet already has data in rows.\n\n" +
+      "📊 Rows with data: " + (lastRow - 1) + "\n\n" +
+      "To protect your existing data, sheet template initialization is not allowed.\n\n" +
+      "Please use a new worksheet or a blank workbook to initialize the template.",
+      ui.ButtonSet.OK
+    );
+    return;
   }
 
   // ERASE ALL SAVED TEMPLATES ON INITIALIZATION
   try {
     var props = PropertiesService.getDocumentProperties();
-    props.deleteProperty('documail_templates'); 
-    props.setProperty('SIDEBAR_REFRESH_SIGNAL_KEY', "REFRESH_WIPE_" + new Date().getTime());
+    var key = 'documail_templates_' + sheet.getName();
+    props.deleteProperty(key);
+    var refreshKey = 'SIDEBAR_REFRESH_SIGNAL_KEY_' + sheet.getName();
+    props.setProperty(refreshKey, "REFRESH_WIPE_" + new Date().getTime());
     console.log("🧹 Saved templates property database successfully purged.");
   } catch (err) {
     console.log("Error clearing templates property database: " + err.message);
   }
 
-  // 2. PROCEED WITH WIPE AND RENDER
-  var existingProtections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-  for (var i = 0; i < existingProtections.length; i++) {
-    existingProtections[i].remove();
-  }
-  SpreadsheetApp.flush();
+  // If no columns, create initial headers
+  if (lastColumn === 0) {
+    var initialHeaders = [
+      "Column 1", "Column 2", "Column 3", "Column 4",
+      "Recipient Email",
+      "Merged Doc Status",
+      "Merged Doc ID",
+      "Merged Doc URL"
+    ];
 
-  sheet.clear();
-  sheet.clearFormats();
-  sheet.clearContents();
-  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
+    var totalCols = initialHeaders.length;
+    sheet.getRange(1, 1, 1, totalCols).setValues([initialHeaders]);
 
-  // Standardizing column blueprint to "Column 1", "Column 2", etc.
-  var headers = [
-    "Column 1", "Column 2", "Column 3", "Column 4",
-    "Recipient Email",
-    "Merged Doc Status",
-    "Merged Doc ID",
-    "Merged Doc URL"
-  ];
+    var headerRange = sheet.getRange(1, 1, 1, totalCols);
+    headerRange.setFontWeight("bold")
+      .setBackground("#E8F0FE")
+      .setFontColor("#1A73E8")
+      .setWrap(true)
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
 
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
 
-  var headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setFontWeight("bold")
-    .setBackground("#E8F0FE")
-    .setFontColor("#1A73E8")
-    .setWrap(true)
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle");
+    // Recipient Email column (column 5) - Email validation
+    var emailCol = 5;
+    var emailRange = sheet.getRange(2, emailCol, sheet.getMaxRows() - 1, 1);
+    emailRange.setDataValidation(SpreadsheetApp.newDataValidation().requireTextIsEmail().setAllowInvalid(false).build());
+    sheet.getRange(1, emailCol).setFontColor("#137333").setBackground("#E6F4EA");
 
-  sheet.setFrozenRows(1);
+    // System columns range (columns 6, 7, 8)
+    var systemStartCol = 6;
+    var systemRange = sheet.getRange(2, systemStartCol, sheet.getMaxRows() - 1, 3);
+    systemRange.setBackground("#f3f3f3")
+      .setFontColor("#888888");
 
-  sheet.getRange("E1").setFontColor("#137333").setBackground("#E6F4EA");
-  var emailRange = sheet.getRange("E2:E1000");
-  emailRange.setDataValidation(SpreadsheetApp.newDataValidation().requireTextIsEmail().setAllowInvalid(false).build());
+    sheet.getRange(1, systemStartCol).setNote("🔒 SYSTEM COLUMN - Auto-generated. Do not edit.");
+    sheet.getRange(1, systemStartCol + 1).setNote("🔒 SYSTEM COLUMN - Auto-generated Document ID");
+    sheet.getRange(1, systemStartCol + 2).setNote("🔒 SYSTEM COLUMN - Auto-generated Document URL");
 
-  // System columns range (F through H only)
-  var systemRange = sheet.getRange("F2:H1000");
-  systemRange.setBackground("#f3f3f3");
-  systemRange.setFontColor("#888888");
+    // =======================================================
+    // COMPREHENSIVE TIP NOTE ATTACHED TO A1
+    // =======================================================
+    sheet.getRange("A1").setNote(
+      "💡 TIP:\n" +
+      "1. You can double-click any header (Row 1) to Rename it! (e.g., Change to 'Date', 'City', etc.)\n" +
+      "2. Need more columns? Right-click Column E and choose 'Insert column left' to add more fields.\n" +
+      "3. You can safely add, delete, or rename columns to the RIGHT of Column A-D or to the LEFT of Column F.\n\n" +
+      "⚠️ Columns F-H are system locked."
+    );
 
-  sheet.getRange("F1").setNote("🔒 SYSTEM COLUMN - Auto-generated. Do not edit.");
-  sheet.getRange("G1").setNote("🔒 SYSTEM COLUMN - Auto-generated Document ID");
-  sheet.getRange("H1").setNote("🔒 SYSTEM COLUMN - Auto-generated Document URL");
+    // Protect only F through H (PDF system columns)
+    var protection = sheet.getRange(1, systemStartCol, sheet.getMaxRows(), 3).protect();
+    protection.setDescription('DocuMail Pro System Columns (PDF) - Locked');
+    protection.removeEditors(protection.getEditors());
 
-  // =======================================================
-  // FIXED: COMBINED COMPREHENSIVE TIP NOTE ATTACHED TO A1
-  // =======================================================
-  sheet.getRange("A1").setNote(
-    "💡 TIP:\n" +
-    "1. You can double-click any header (Row 1) to Rename it! (e.g., Change to 'Date', 'City', etc.)\n" +
-    "2. Need more columns? Right-click Column E and choose 'Insert column left' to add more fields.\n" +
-    "3. You can safely add, delete, or rename columns to the RIGHT of Column A-D or to the LEFT of Column F.\n\n" +
-    "⚠️ Columns F-H are system locked."
-  );
-
-  // Protect only F through H (PDF system columns)
-  var protection = sheet.getRange("F1:H1000").protect();
-  protection.setDescription('DocuMail Pro System Columns (PDF) - Locked');
-  protection.removeEditors(protection.getEditors());
-
-  // Set tight safety base width profiles (No stretching anymore!)
-  sheet.setColumnWidth(1, 110); 
-  sheet.setColumnWidth(2, 110); 
-  sheet.setColumnWidth(3, 110); 
-  sheet.setColumnWidth(4, 110); 
-  sheet.setColumnWidth(5, 200); 
-  sheet.setColumnWidth(6, 150); 
-  sheet.setColumnWidth(7, 150); 
-  sheet.setColumnWidth(8, 300); 
-
-  // Auto-resize targets cleanly matching exact text measurements
-  for (var col = 1; col <= headers.length; col++) {
-    sheet.autoResizeColumn(col);
-    if (sheet.getColumnWidth(col) < 100) {
-      sheet.setColumnWidth(col, 110);
+    // Set column widths
+    var columnWidths = [110, 110, 110, 110, 200, 150, 150, 300];
+    for (var i = 0; i < columnWidths.length; i++) {
+      sheet.setColumnWidth(i + 1, columnWidths[i]);
     }
-  }
-  
-  sheet.setRowHeight(1, 40);
 
-  // Clean, non-technical alert
-  ui.alert(
-    "✅ Sheet Structure Ready!\n\n" +
-    "👉 QUICK GUIDE FOR YOU:\n" +
-    "1. You can Rename 'Column 1, 2, 3, 4' to whatever you want (like Date, Invoice No, etc.).\n" +
-    "2. You can Delete columns you don't need.\n" +
-    "3. You can Add new columns anywhere between Column A and Column E.\n\n" +
-    "⚠️ Note: Columns F to H are system locked to protect your generated PDF links."
-  );
+    // Auto-resize
+    for (var col = 1; col <= totalCols; col++) {
+      sheet.autoResizeColumn(col);
+      if (sheet.getColumnWidth(col) < 100) {
+        sheet.setColumnWidth(col, 110);
+      }
+    }
+
+    sheet.setRowHeight(1, 40);
+
+    ui.alert(
+      "✅ Sheet Structure Ready!\n\n" +
+      "👉 QUICK GUIDE FOR YOU:\n" +
+      "1. You can Rename 'Column 1, 2, 3, 4' to whatever you want (like Date, Invoice No, etc.).\n" +
+      "2. You can Delete columns you don't need.\n" +
+      "3. You can Add new columns anywhere between Column A and Column E.\n\n" +
+      "⚠️ Note: Columns F to H are system locked to protect your generated PDF links."
+    );
+
+  } else {
+    // =======================================================
+    // EXISTING COLUMNS (Headers only, no data rows) - APPEND SYSTEM COLUMNS
+    // =======================================================
+    var existingHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    var newHeaders = [
+      "Recipient Email",
+      "Merged Doc Status",
+      "Merged Doc ID",
+      "Merged Doc URL"
+    ];
+
+    var startCol = lastColumn + 1;
+
+    // Create the range for the new headers
+    var newRange = sheet.getRange(1, startCol, 1, newHeaders.length);
+    newRange.setValues([newHeaders]);
+
+    // Apply styling to these 4 columns
+    newRange.setFontWeight("bold")
+      .setBackground("#E8F0FE")
+      .setFontColor("#1A73E8")
+      .setWrap(true)
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+
+    // Recipient Email column (first of the 4) - Email validation
+    var emailCol = startCol;
+    var emailRange = sheet.getRange(2, emailCol, sheet.getMaxRows() - 1, 1);
+    emailRange.setDataValidation(SpreadsheetApp.newDataValidation().requireTextIsEmail().setAllowInvalid(false).build());
+    sheet.getRange(1, emailCol).setFontColor("#137333").setBackground("#E6F4EA");
+
+    // System columns (3 columns after Recipient Email)
+    var systemStartCol = startCol + 1;
+    var systemRange = sheet.getRange(2, systemStartCol, sheet.getMaxRows() - 1, 3);
+    systemRange.setBackground("#f3f3f3")
+      .setFontColor("#888888");
+
+    // Add notes for each system column
+    sheet.getRange(1, startCol).setNote("🔒 SYSTEM COLUMN - Recipient Email");
+    sheet.getRange(1, startCol + 1).setNote("🔒 SYSTEM COLUMN - Auto-generated. Do not edit.");
+    sheet.getRange(1, startCol + 2).setNote("🔒 SYSTEM COLUMN - Auto-generated Document ID");
+    sheet.getRange(1, startCol + 3).setNote("🔒 SYSTEM COLUMN - Auto-generated Document URL");
+
+    // =======================================================
+    // COMPREHENSIVE TIP NOTE ATTACHED TO A1
+    // =======================================================
+    sheet.getRange("A1").setNote(
+      "💡 TIP:\n" +
+      "1. You can double-click any header (Row 1) to Rename it! (e.g., Change to 'Date', 'City', etc.)\n" +
+      "2. Need more columns? Right-click Column E and choose 'Insert column left' to add more fields.\n" +
+      "3. You can safely add, delete, or rename columns to the RIGHT of Column A-D or to the LEFT of Column F.\n\n" +
+      "⚠️ Columns " + String.fromCharCode(64 + systemStartCol) + " to " + String.fromCharCode(64 + startCol + newHeaders.length - 1) + " are system locked."
+    );
+
+    // Protect the 4 system columns (entire column)
+    var protection = sheet.getRange(1, startCol, sheet.getMaxRows(), newHeaders.length).protect();
+    protection.setDescription('DocuMail Pro System Columns - Locked');
+    protection.removeEditors(protection.getEditors());
+
+    // Set column widths
+    var columnWidths = [200, 150, 150, 300];
+    for (var i = 0; i < columnWidths.length; i++) {
+      sheet.setColumnWidth(startCol + i, columnWidths[i]);
+    }
+
+    // Auto-resize
+    for (var col = startCol; col < startCol + newHeaders.length; col++) {
+      sheet.autoResizeColumn(col);
+      if (sheet.getColumnWidth(col) < 100) {
+        sheet.setColumnWidth(col, 110);
+      }
+    }
+
+    // Set frozen rows if not already
+    if (sheet.getFrozenRows() === 0) {
+      sheet.setFrozenRows(1);
+    }
+
+    ui.alert(
+      "✅ New system columns added to the right of existing columns!\n\n" +
+      "📊 Existing Columns: " + lastColumn + "\n" +
+      "➕ System Columns Added: " + newHeaders.length + "\n" +
+      "📋 Total Columns: " + (lastColumn + newHeaders.length) + "\n\n" +
+      "⚠️ Note: The 4 new columns are system locked."
+    );
+  }
 }
+// ==========================================
+// FUNCTION: GENERATE_DOCUMAIL_TEMPLATE Ends
+// ==========================================
 
 // ==========================================
 // Helper Functions
@@ -283,4 +361,3 @@ function CHECK_TEMPLATE_RECORDS(templateId) {
 
   return { hasRecords: false }; // Safe (empty)
 }
-//file content end

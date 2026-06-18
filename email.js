@@ -215,23 +215,27 @@ function CHECK_DAILY_QUOTA_ALERT() {
  * This fixes the missing function crash and allows auto-refresh to process cleanly.
  */
 function CHECK_SIDEBAR_REFRESH() {
-    try {
-        return PropertiesService.getDocumentProperties().getProperty('SIDEBAR_REFRESH_SIGNAL_KEY') || "";
-    } catch (e) {
-        console.log("Error reading layout sync properties: " + e.message);
-        return "";
-    }
+  try {
+    var sheetName = SpreadsheetApp.getActiveSheet().getName();
+    var key = 'SIDEBAR_REFRESH_SIGNAL_KEY_' + sheetName;
+    return PropertiesService.getDocumentProperties().getProperty(key) || "";
+  } catch (e) {
+    console.log("Error reading layout sync properties: " + e.message);
+    return "";
+  }
 }
 
 /**
  * Alternative manual layout trigger utility if called by legacy handlers.
  */
 function SIGNAL_SIDEBAR_REFRESH() {
-    try {
-        PropertiesService.getDocumentProperties().setProperty('SIDEBAR_REFRESH_SIGNAL_KEY', "REFRESH_" + new Date().getTime());
-        return true;
-    } catch (e) {
-        return false;
-    }
+  try {
+    var sheetName = SpreadsheetApp.getActiveSheet().getName();
+    var key = 'SIDEBAR_REFRESH_SIGNAL_KEY_' + sheetName;
+    PropertiesService.getDocumentProperties().setProperty(key, "REFRESH_" + new Date().getTime());
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 //file content end

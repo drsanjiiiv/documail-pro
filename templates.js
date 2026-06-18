@@ -1,4 +1,3 @@
-/** file name: templates.gs
 /**
  * ============================================================================
  * DOCUMAIL PRO COMPLETE MASTER CORE SCRIPT
@@ -8,31 +7,56 @@
  */
 
 // ==========================================
-// TEMPLATE SYSTEM - CRUD OPERATIONS
+// BLOCK: HELPER - GET STORAGE KEY PER TAB
+// ==========================================
+
+function GET_TEMPLATES_KEY() {
+  var sheetName = SpreadsheetApp.getActiveSheet().getName();
+  return 'documail_templates_' + sheetName;
+}
+
+function GET_REFRESH_KEY() {
+  var sheetName = SpreadsheetApp.getActiveSheet().getName();
+  return 'SIDEBAR_REFRESH_SIGNAL_KEY_' + sheetName;
+}
+
+// ==========================================
+// BLOCK: TEMPLATE SYSTEM - CRUD OPERATIONS
 // ==========================================
 
 function GET_ALL_TEMPLATES() {
-  var templates = PropertiesService.getDocumentProperties().getProperty('documail_templates');
-  return templates ? JSON.parse(templates) : [];
+  try {
+    var key = GET_TEMPLATES_KEY();
+    var templates = PropertiesService.getDocumentProperties().getProperty(key);
+    return templates ? JSON.parse(templates) : [];
+  } catch (e) {
+    console.error("GET_ALL_TEMPLATES error: " + e.message);
+    return [];
+  }
 }
 
 function SAVE_TEMPLATE(template) {
- 
+  var key = GET_TEMPLATES_KEY();
   var templates = GET_ALL_TEMPLATES();
   var existingIndex = -1;
+  var isNewTemplate = false;
+  
   for (var i = 0; i < templates.length; i++) {
     if (templates[i].id === template.id) {
       existingIndex = i;
       break;
     }
   }
+  
   if (existingIndex !== -1) {
     templates[existingIndex] = template;
   } else {
     template.id = generateUUID();
     templates.push(template);
+    isNewTemplate = true;
   }
-  PropertiesService.getDocumentProperties().setProperty('documail_templates', JSON.stringify(templates));
+  
+  PropertiesService.getDocumentProperties().setProperty(key, JSON.stringify(templates));
 
   // Check/create status column
   var columnCreated = false;
@@ -66,11 +90,13 @@ function SAVE_TEMPLATE(template) {
   return {
     template: template,
     columnCreated: columnCreated,
-    columnExists: columnExists
+    columnExists: columnExists,
+    isNewTemplate: isNewTemplate
   };
 }
 
 function DELETE_TEMPLATE(templateId) {
+  var key = GET_TEMPLATES_KEY();
   var templates = GET_ALL_TEMPLATES();
   var targetTemplate = null;
 
@@ -192,7 +218,7 @@ function DELETE_TEMPLATE(templateId) {
   }
 
   // =======================================================
-  // REMOVE TEMPLATE FROM STORAGE
+  // REMOVE TEMPLATE FROM STORAGE (PER TAB)
   // =======================================================
   var filtered = [];
   for (var i = 0; i < templates.length; i++) {
@@ -200,13 +226,14 @@ function DELETE_TEMPLATE(templateId) {
       filtered.push(templates[i]);
     }
   }
-  PropertiesService.getDocumentProperties().setProperty('documail_templates', JSON.stringify(filtered));
+  PropertiesService.getDocumentProperties().setProperty(key, JSON.stringify(filtered));
 
   // =======================================================
-  // SIDEBAR REFRESH
+  // SIDEBAR REFRESH (PER TAB)
   // =======================================================
   try {
-    PropertiesService.getDocumentProperties().setProperty('SIDEBAR_REFRESH_SIGNAL_KEY', "REFRESH_" + new Date().getTime());
+    var refreshKey = GET_REFRESH_KEY();
+    PropertiesService.getDocumentProperties().setProperty(refreshKey, "REFRESH_" + new Date().getTime());
   } catch (err) {}
 
   ui.alert("✅ Template Deleted", "Template '" + targetTemplate.name + "' has been deleted successfully.", ui.ButtonSet.OK);
@@ -238,6 +265,7 @@ function GET_TEMPLATE_BY_ID_FOR_EDIT(templateId) {
 }
 
 function SAVE_TEMPLATE_SCHEDULE(params) {
+  var key = GET_TEMPLATES_KEY();
   var templates = GET_ALL_TEMPLATES();
   for (var i = 0; i < templates.length; i++) {
     if (templates[i].id === params.templateId) {
@@ -245,7 +273,7 @@ function SAVE_TEMPLATE_SCHEDULE(params) {
       break;
     }
   }
-  PropertiesService.getDocumentProperties().setProperty('documail_templates', JSON.stringify(templates));
+  PropertiesService.getDocumentProperties().setProperty(key, JSON.stringify(templates));
   return "Schedule saved";
 }
 
@@ -268,10 +296,14 @@ function GET_TEMPLATE_BY_NAME(templateName) {
 }
 
 function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
+  var key = GET_TEMPLATES_KEY();
+  var refreshKey = GET_REFRESH_KEY();
+  
   // First, save/update the template
   var templates = GET_ALL_TEMPLATES();
   var existingIndex = -1;
   var template = templateData;
+  var isNewTemplate = false;
 
   if (templateId) {
     template.id = templateId;
@@ -288,13 +320,14 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   } else {
     template.id = generateUUID();
     templates.push(template);
+    isNewTemplate = true;
   }
 
   // Add schedule to template
   template.schedule = schedule;
 
-  // Save to properties
-  PropertiesService.getDocumentProperties().setProperty('documail_templates', JSON.stringify(templates));
+  // Save to properties (PER TAB)
+  PropertiesService.getDocumentProperties().setProperty(key, JSON.stringify(templates));
 
   // Check/create status column
   var columnCreated = false;
@@ -325,11 +358,11 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   }
 
   // =======================================================
-  // CRITICAL AUTO-REFRESH FIX: Update the global refresh token!
+  // CRITICAL AUTO-REFRESH FIX: Update the global refresh token (PER TAB)
   // =======================================================
   try {
     var timestampToken = "REFRESH_" + new Date().getTime();
-    PropertiesService.getDocumentProperties().setProperty('SIDEBAR_REFRESH_SIGNAL_KEY', timestampToken);
+    PropertiesService.getDocumentProperties().setProperty(refreshKey, timestampToken);
     console.log("🔔 Sidebar sync token pushed to properties: " + timestampToken);
   } catch (err) {
     console.log("Error updating sidebar sync token: " + err.message);
@@ -390,8 +423,7 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   return {
     template: template,
     columnCreated: columnCreated,
-    columnExists: columnExists
+    columnExists: columnExists,
+    isNewTemplate: isNewTemplate
   };
 }
-
-//file content end

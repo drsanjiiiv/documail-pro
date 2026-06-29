@@ -295,7 +295,7 @@ function GET_TEMPLATE_BY_NAME(templateName) {
   return null;
 }
 
-function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
+function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId, sendEmail) {
   var templates = GET_ALL_TEMPLATES();
   var existingIndex = -1;
   var template = templateData;
@@ -313,10 +313,8 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   }
 
   if (existingIndex !== -1) {
-    // UPDATE existing template
     templates[existingIndex] = template;
   } else {
-    // CREATE new template
     template.id = generateUUID();
     templates.push(template);
     isNewTemplate = true;
@@ -358,66 +356,65 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId) {
   }
 
   // =======================================================
-  // CRITICAL AUTO-REFRESH FIX: Update the global refresh token (PER TAB)
+  // AUTO-REFRESH TOKEN
   // =======================================================
   try {
-    var timestampToken = "REFRESH_" + new Date().getTime();
-    PropertiesService.getDocumentProperties().setProperty(refreshKey, timestampToken);
-    console.log("🔔 Sidebar sync token pushed to properties: " + timestampToken);
+    var refreshKey = GET_REFRESH_KEY();
+    PropertiesService.getDocumentProperties().setProperty(refreshKey, "REFRESH_" + new Date().getTime());
   } catch (err) {
     console.log("Error updating sidebar sync token: " + err.message);
   }
 
   // =======================================================
-  // NOTIFICATION EMAIL - WITH USER INFO
+  // NOTIFICATION EMAIL - ONLY IF sendEmail IS TRUE
   // =======================================================
-  try {
-    var userEmail = Session.getActiveUser().getEmail();
-    var userName = Session.getActiveUser().getUsername() || userEmail;
-    
-    if (userEmail) {
-      var templateName = template.name || "Unnamed Template";
+  if (sendEmail === true) {
+    try {
+      var userEmail = Session.getActiveUser().getEmail();
+      var userName = Session.getActiveUser().getUsername() || userEmail;
+      
+      if (userEmail) {
+        var templateName = template.name || "Unnamed Template";
+        var typeDisplayMsg = "";
+        if (template.type === "PDF_ONLY") {
+          typeDisplayMsg = "📄 PDF Only";
+        } else if (template.type === "EMAIL_ONLY") {
+          typeDisplayMsg = "✉️ Email Only";
+        } else if (template.type === "BOTH") {
+          typeDisplayMsg = "🔄 PDF & Email";
+        } else {
+          typeDisplayMsg = template.type || "Standard Layout";
+        }
 
-      // Map template type to display label
-      var typeDisplayMsg = "";
-      if (template.type === "PDF_ONLY") {
-        typeDisplayMsg = "📄 PDF Only";
-      } else if (template.type === "EMAIL_ONLY") {
-        typeDisplayMsg = "✉️ Email Only";
-      } else if (template.type === "BOTH") {
-        typeDisplayMsg = "🔄 PDF & Email";
-      } else {
-        typeDisplayMsg = template.type || "Standard Layout";
+        var runModeMsg = "";
+        if (schedule === "MANUAL") {
+          runModeMsg = 'Will run "Manually" only';
+        } else {
+          runModeMsg = 'Will run "Time Trigger" (Schedule: ' + schedule + ')';
+        }
+
+        var actionType = isNewTemplate ? "Created" : "Updated";
+
+        var emailSubject = "📄 DocuMail Pro: Template [" + templateName + "] " + actionType + " Successfully";
+        var emailBody = "Hello,\n\n" +
+          "This is to confirm that a template configuration has been successfully " + actionType.toLowerCase() + ".\n\n" +
+          "Details:\n" +
+          "▪️ Template Name: " + templateName + "\n" +
+          "▪️ Template Type: " + typeDisplayMsg + "\n" +
+          "▪️ Execution Mode: " + runModeMsg + "\n" +
+          "▪️ " + actionType + " By: " + userName + " (" + userEmail + ")\n" +
+          "▪️ Date/Time: " + new Date().toLocaleString() + "\n\n" +
+          "Regards,\n" +
+          "DocuMail Pro System Engine";
+
+        MailApp.sendEmail(userEmail, emailSubject, emailBody);
+        console.log("📨 " + actionType + " confirmation email sent to: " + userEmail);
       }
-
-      // Schedule display
-      var runModeMsg = "";
-      if (schedule === "MANUAL") {
-        runModeMsg = 'Will run "Manually" only';
-      } else {
-        runModeMsg = 'Will run "Time Trigger" (Schedule: ' + schedule + ')';
-      }
-
-      // Action type (Created or Updated)
-      var actionType = isNewTemplate ? "Created" : "Updated";
-
-      var emailSubject = "📄 DocuMail Pro: Template [" + templateName + "] " + actionType + " Successfully";
-      var emailBody = "Hello,\n\n" +
-        "This is to confirm that a template configuration has been successfully " + actionType.toLowerCase() + ".\n\n" +
-        "Details:\n" +
-        "▪️ Template Name: " + templateName + "\n" +
-        "▪️ Template Type: " + typeDisplayMsg + "\n" +
-        "▪️ Execution Mode: " + runModeMsg + "\n" +
-        "▪️ " + actionType + " By: " + userName + " (" + userEmail + ")\n" +
-        "▪️ Date/Time: " + new Date().toLocaleString() + "\n\n" +
-        "Regards,\n" +
-        "DocuMail Pro System Engine";
-
-      MailApp.sendEmail(userEmail, emailSubject, emailBody);
-      console.log("📨 " + actionType + " confirmation email sent to: " + userEmail);
+    } catch (err) {
+      console.log("Could not send template configuration email: " + err.message);
     }
-  } catch (err) {
-    console.log("Could not send template configuration email: " + err.message);
+  } else {
+    console.log("⏭️ Email skipped (auto-save or no sendEmail flag)");
   }
 
   return {

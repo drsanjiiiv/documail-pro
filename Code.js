@@ -23,8 +23,53 @@ function onOpen() {
 // Function (INITIALIZE_ADDON_SIDEBAR) Starts
 // ==========================================
 function INITIALIZE_ADDON_SIDEBAR() {
+  var ui = SpreadsheetApp.getUi();
+  var sheet = SpreadsheetApp.getActiveSheet();
+
+  // =======================================================
+  // CHECK IF SYSTEM COLUMNS EXIST
+  // =======================================================
+  var lastCol = sheet.getLastColumn();
+  var hasSystemColumns = false;
+
+  if (lastCol > 0) {
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      var hName = String(headers[i]).toLowerCase().trim();
+      if (hName.indexOf("merged doc status") !== -1 ||
+        hName.indexOf("recipient email") !== -1) {
+        hasSystemColumns = true;
+        break;
+      }
+    }
+  }
+
+  // =======================================================
+  // IF SYSTEM COLUMNS DON'T EXIST, PROMPT USER
+  // =======================================================
+  if (!hasSystemColumns) {
+    var response = ui.alert(
+      "⚠️ DocuMail PRO Not Initialized",
+      "DocuMail PRO system columns don't exist in this sheet.\n\n" +
+      "Please initialize the sheet structure first to continue.\n\n" +
+      "Do you want to initialize it now?",
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response === ui.Button.YES) {
+      // Call the initialization function
+      GENERATE_DOCUMAIL_TEMPLATE();
+    }
+    return;
+  }
+
+  // =======================================================
+  // SYSTEM COLUMNS EXIST - PROCEED WITH SIDEBAR
+  // =======================================================
   var html = HtmlService.createTemplateFromFile('SidebarView');
-  var sidebarUi = html.evaluate().setTitle("DocuMail Pro").setSandboxMode(HtmlService.SandboxMode.IFRAME);
+  var sidebarUi = html.evaluate()
+    .setTitle("DocuMail Pro")
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
   SpreadsheetApp.getUi().showSidebar(sidebarUi);
 }
 
@@ -34,7 +79,7 @@ function INITIALIZE_ADDON_SIDEBAR() {
 
 function CREATE_DOCUMENT_TEMPLATE_MENU() {
   var result = CREATE_DOCUMENT_TEMPLATE();
-  
+
   var ui = SpreadsheetApp.getUi();
   if (result.success) {
     // Create HTML with Open button and link
@@ -64,9 +109,9 @@ function CREATE_DOCUMENT_TEMPLATE_MENU() {
       .setWidth(450)
       .setHeight(320)
       .setTitle('Template Created');
-    
+
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Template Created');
-    
+
   } else {
     ui.alert(
       "❌ Error Creating Template",
@@ -231,7 +276,7 @@ function SHOW_RUN_DIALOG(templateId) {
   // CHECK IF RESULT IS AN ERROR MESSAGE
   // =======================================================
   var isError = false;
-  var errorKeywords = ["No data rows found", "Error:", "Template not found", "No eligible records", "Failed", "No rows match"];
+  var errorKeywords = ["No data rows found", "Error:", "Template not found", "No eligible records", "Failed", "No rows match", "Execution Aborted"];
   for (var i = 0; i < errorKeywords.length; i++) {
     if (result && result.indexOf(errorKeywords[i]) !== -1) {
       isError = true;
@@ -270,17 +315,17 @@ function SHOW_RUN_DIALOG(templateId) {
     }
   }
 
-   // =======================================================
+  // =======================================================
   // SHOW RESULT POPUP
   // =======================================================
   var html = '<div style="font-family: Roboto, sans-serif; padding: 20px;">';
-  
+
   if (isError) {
     html += '<h2 style="color:#c5221f;">❌ Execution Failed</h2>';
   } else {
     html += '<h2 style="color:#1a73e8;">✅ Execution Completed!</h2>';
   }
-  
+
   html += '<hr>';
   html += '<p><strong>📄 Template:</strong> ' + escapeHtml(template.name) + '</p>';
   html += '<p><strong>📋 Type:</strong> ' + (template.type === "PDF_ONLY" ? "PDF Only" : template.type === "EMAIL_ONLY" ? "Email Only" : "PDF & Email") + '</p>';
@@ -293,7 +338,7 @@ function SHOW_RUN_DIALOG(templateId) {
     html += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">📅 Resets every 24 hours</p>';
     html += '</div>';
   }
-   // =======================================================
+  // =======================================================
   // SHOW RESULT WITH RED BACKGROUND FOR ERRORS
   // =======================================================
   if (isError) {
@@ -435,48 +480,48 @@ function CREATE_DOCUMENT_TEMPLATE() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getActiveSheet();
     var sheetName = sheet.getName();
-    
+
     // Get the spreadsheet's parent folder
     var ssFile = DriveApp.getFileById(ss.getId());
     var parentFolders = ssFile.getParents();
     var parentFolder = null;
-    
+
     if (parentFolders.hasNext()) {
       parentFolder = parentFolders.next();
     } else {
       parentFolder = DriveApp.getRootFolder();
     }
-    
+
     // =======================================================
     // CREATE DEDICATED FOLDER: DocuMail PRO Templates
     // =======================================================
     var folderName = "DocuMail PRO Templates";
     var templateFolder = null;
     var existingFolders = parentFolder.getFoldersByName(folderName);
-    
+
     if (existingFolders.hasNext()) {
       templateFolder = existingFolders.next();
     } else {
       templateFolder = parentFolder.createFolder(folderName);
     }
-    
+
     // Get all headers from the sheet (exclude system columns)
     var headers = GET_LIVE_SHEET_HEADERS();
-    
+
     // Create document name
     var docName = "DocTemplate for " + sheetName;
-    
+
     // Create the Google Doc
     var doc = DocumentApp.create(docName);
     var docId = doc.getId();
     var docFile = DriveApp.getFileById(docId);
-    
+
     // Move the document to the template folder
     templateFolder.addFile(docFile);
     DriveApp.getRootFolder().removeFile(docFile);
-    
+
     var body = doc.getBody();
-    
+
     // =======================================================
     // HEADER: Instruction
     // =======================================================
@@ -487,9 +532,9 @@ function CREATE_DOCUMENT_TEMPLATE() {
     instruction.setFontFamily("Calibri");
     instruction.setBold(true);
     instruction.setForegroundColor("#1A73E8");
-    
+
     body.appendParagraph("");
-    
+
     // =======================================================
     // TAGS: All in one line
     // =======================================================
@@ -501,16 +546,16 @@ function CREATE_DOCUMENT_TEMPLATE() {
       }
     }
     tagText += tagArray.join(" ");
-    
+
     var tagsPara = body.appendParagraph(tagText);
     tagsPara.setFontSize(14);
     tagsPara.setFontFamily("Calibri");
     tagsPara.setForegroundColor("#137333");
     tagsPara.setBold(true);
-    
+
     body.appendParagraph("");
     body.appendParagraph("");
-    
+
     // =======================================================
     // NOTE: About multiple templates
     // =======================================================
@@ -521,10 +566,10 @@ function CREATE_DOCUMENT_TEMPLATE() {
     noteText.setFontFamily("Calibri");
     noteText.setForegroundColor("#5F6368");
     noteText.setItalic(true);
-    
+
     body.appendParagraph("");
     body.appendParagraph("");
-    
+
     // =======================================================
     // FOOTER: Remove instruction
     // =======================================================
@@ -537,7 +582,7 @@ function CREATE_DOCUMENT_TEMPLATE() {
     footerText.setItalic(true);
     footerText.setUnderline(true);
     footerText.setForegroundColor("#D93025");
-    
+
     // =======================================================
     // DOTTED LINE - Full page width
     // =======================================================
@@ -548,14 +593,14 @@ function CREATE_DOCUMENT_TEMPLATE() {
     dottedLine.setForegroundColor("#999999");
     dottedLine.setSpacingAfter(0);
     dottedLine.setSpacingBefore(0);
-    
+
     // Save and get URL
     doc.saveAndClose();
     var docUrl = doc.getUrl();
-    
+
     console.log("✅ Template created: " + docName + " - " + docUrl);
     console.log("📁 Saved in folder: " + templateFolder.getName());
-    
+
     return {
       success: true,
       url: docUrl,
@@ -563,7 +608,7 @@ function CREATE_DOCUMENT_TEMPLATE() {
       name: docName,
       folder: templateFolder.getName()
     };
-    
+
   } catch (e) {
     console.error("Error creating document template: " + e.message);
     return {

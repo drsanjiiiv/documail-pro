@@ -1,0 +1,64 @@
+# This is an example configuration file
+# To learn more, see the full config.yaml reference: https://docs.continue.dev/reference
+
+name: Kaggle Qwen 27B
+version: 1.0.0
+schema: v1
+
+# Updated Kaggle Cloud Configuration
+# Consolidated setup for Qwen 3.6 27B running on T4x2
+# Change apiBase to your active Ngrok URL
+
+models:
+  # ODOO EXPERT PERSONA
+  - name: Odoo Expert (27B)
+    provider: ollama
+    model: qwen3.6:27b
+    roles:
+      - chat
+      - edit
+      - apply
+    contextLength: 16384
+    completionOptions:
+      temperature: 0.1
+    parameters:
+      num_ctx: 16384
+      num_predict: 4096
+    systemMessage: |
+      You are an expert Odoo developer. Follow Odoo 17/18 conventions:
+      - Use Python 3.10+ with Odoo ORM
+      - Follow Odoo XML structure for views/actions
+      - Use security rules and record rules
+      - Follow Odoo naming conventions (_id, _name, etc.)
+      - Use _inherit, _name properly
+      - Write clean, maintainable code with docstrings
+    apiBase: https://grafted-poplar-voucher.ngrok-free.dev
+
+  # APPS SCRIPT EXPERT PERSONA
+  - name: Apps Script Expert (27B)
+    provider: ollama
+    model: qwen3.6:27b
+    roles:
+      - chat
+      - edit
+      - apply
+    contextLength: 16384
+    completionOptions:
+      temperature: 0.2
+    parameters:
+      num_ctx: 16384
+      num_predict: 4096
+    systemMessage: |
+      You are a Google Apps Script expert. Follow best practices:
+      - Use Google Apps Script APIs (SpreadsheetApp, GmailApp, etc.)
+      - Handle quotas and limitations
+      - Use triggers (onEdit, onOpen, time-driven)
+      - Write efficient code with proper error handling
+      - Use PropertiesService for configuration
+    apiBase: https://grafted-poplar-voucher.ngrok-free.dev
+
+# Define default roles
+defaultRoleModels:
+  chat: Odoo Expert (27B)
+  edit: Odoo Expert (27B)
+  apply: Odoo Expert (27B)

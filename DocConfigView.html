@@ -883,8 +883,11 @@
         var row = sel.closest('tr');
         var td = row.querySelector('td:first-child');
 
+        // Remove existing indicators
         var existingSpan = td.querySelector('.mismatch-span');
         if (existingSpan) existingSpan.remove();
+        var existingCheck = td.querySelector('.checkmark');
+        if (existingCheck) existingCheck.remove();
 
         if (unmatched.indexOf(tag) !== -1) {
           row.style.backgroundColor = '#fce8e6';
@@ -906,15 +909,35 @@
       var any = false;
       var total = 0;
       var mapped = 0;
+
       document.querySelectorAll('.tag-mapper-dropdown').forEach(function (sel) {
         total++;
+        var row = sel.closest('tr');
+        var td = row.querySelector('td:first-child');
+
+        // Remove existing indicators
+        var existingSpan = td.querySelector('.mismatch-span');
+        if (existingSpan) existingSpan.remove();
+        var existingCheck = td.querySelector('.checkmark');
+        if (existingCheck) existingCheck.remove();
+
         if (sel.value === "") {
           any = true;
+          row.style.backgroundColor = '#fce8e6';
+          row.style.borderLeft = '3px solid #d93025';
+          td.innerHTML = td.innerHTML.split(' <span')[0];
+          td.innerHTML += ' <span class="mismatch-span">⚠️ ! (Map Manually)</span>';
         } else {
           mapped++;
+          row.style.backgroundColor = '#e6f4ea';
+          row.style.borderLeft = '3px solid #137333';
+          td.innerHTML = td.innerHTML.split(' <span')[0];
+          td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
         }
       });
+
       hasMismatch = any;
+
       var w = document.getElementById('mismatchWarning');
       if (w) w.style.display = hasMismatch ? 'block' : 'none';
 
@@ -954,40 +977,44 @@
   <script>
 
     function autoSaveCurrentStep() {
-  var step = currentStepIndex;
-  
-  if (isFinishing) return;
-  if (step === 1 && isEditMode) {
-    return;
-  }
-  
-  var templateData = collectTemplateData();
-  var templateId = editingTemplateId || null;  // ← Use existing ID if available
-  
-  // Don't save if no template name
-  if (!templateData.name || templateData.name.trim() === "") {
-    return;
-  }
-  
-  // =======================================================
-  // FIX: Use the existing template ID to UPDATE, not CREATE
-  // =======================================================
-  google.script.run
-    .withSuccessHandler(function(saved) {
-      if (saved && saved.template && saved.template.id) {
-        editingTemplateId = saved.template.id;  // ← Capture ID after first save
-        isEditMode = true;
-        google.script.run.withSuccessHandler(function(templates) {
-          existingTemplates = templates || [];
-        }).GET_ALL_TEMPLATES();
-        console.log("✅ Auto-saved Step " + step + " (ID: " + editingTemplateId + ")");
+      var step = currentStepIndex;
+
+      if (isFinishing) return;
+      if (step === 1 && isEditMode) {
+        return;
       }
-    })
-    .withFailureHandler(function(err) {
-      console.log("⚠️ Auto-save failed for Step " + step + ": " + err.message);
-    })
-    .SAVE_TEMPLATE_WITH_SCHEDULE(templateData, "MANUAL", templateId);  // ← Pass templateId
-}
+
+      var templateData = collectTemplateData();
+      var templateId = editingTemplateId || null;  // ← Use existing ID if available
+
+      // Don't save if no template name
+      if (!templateData.name || templateData.name.trim() === "") {
+        return;
+      }
+
+      // =======================================================
+      // PASS sendEmail: false for auto-save
+      // =======================================================
+
+      // =======================================================
+      // FIX: Use the existing template ID to UPDATE, not CREATE
+      // =======================================================
+      google.script.run
+        .withSuccessHandler(function (saved) {
+          if (saved && saved.template && saved.template.id) {
+            editingTemplateId = saved.template.id;  // ← Capture ID after first save
+            isEditMode = true;
+            google.script.run.withSuccessHandler(function (templates) {
+              existingTemplates = templates || [];
+            }).GET_ALL_TEMPLATES();
+            console.log("✅ Auto-saved Step " + step + " (ID: " + editingTemplateId + ")");
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.log("⚠️ Auto-save failed for Step " + step + ": " + err.message);
+        })
+        .SAVE_TEMPLATE_WITH_SCHEDULE(templateData, "MANUAL", templateId);  // ← Pass templateId
+    }
 
 
     function handleNavigationNext() {
@@ -1190,8 +1217,8 @@
   </script>
 
   <!-- ==========================================
-       BLOCK: SCRIPTS - SAVE & FINISH
-       ========================================== -->
+          BLOCK: SCRIPTS - SAVE & FINISH 
+      ========================================== -->
   <script>
     function notifySidebarToRefresh() {
       google.script.run.withSuccessHandler(function () {
@@ -1230,6 +1257,101 @@
       });
     }
 
+    // =======================================================
+    // ✅ FIX: saveTemplate() is now OUTSIDE finishTemplate()
+    // =======================================================
+    function saveTemplate(successCallback, errorCallback) {
+      var config = {
+        condField: document.getElementById('mergeConditionField')?.value || "",
+        condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY",
+        condValue: document.getElementById('mergeConditionValue')?.value || ""
+      };
+      if (selectedType === "PDF_ONLY" || selectedType === "BOTH") {
+        config.templateUrl = document.getElementById('docTemplateUrl')?.value || "";
+        config.tagMappings = getTagMappings();
+        config.format = document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF";
+        config.namePattern = document.getElementById('fileNamePattern')?.value || "";
+        config.folderDestination = document.getElementById('targetFolderInput')?.value || "";
+      }
+      var template = {
+        id: editingTemplateId,
+        name: document.getElementById('templateName')?.value.trim() || "",
+        type: selectedType,
+        config: config,
+        emailConfig: {
+          replyTo: document.getElementById('emailReplyTo')?.value || "",
+          cc: document.getElementById('emailCc')?.value || "",
+          bcc: document.getElementById('emailBcc')?.value || "",
+          subject: document.getElementById('emailSubject')?.value || "Notification",
+          body: document.getElementById('emailBodyCanvas')?.innerHTML || "",
+          driveAttachments: activeDriveLinksCache,
+          localAttachments: activeLocalFilesCache
+        }
+      };
+
+      google.script.run
+        .withSuccessHandler(function (saved) {
+          if (saved && saved.template && saved.template.id) {
+            editingTemplateId = saved.template.id;
+          }
+          isEditMode = true;
+          google.script.run.withSuccessHandler(function (templates) {
+            existingTemplates = templates || [];
+          }).GET_ALL_TEMPLATES();
+          if (successCallback) successCallback(editingTemplateId);
+        })
+        .withFailureHandler(function (err) {
+          if (errorCallback) {
+            errorCallback(err);
+          } else {
+            alert("❌ Error saving configurations: " + err.message);
+          }
+        })
+        .SAVE_TEMPLATE_WITH_SCHEDULE(template, "MANUAL", null, false);
+    }
+
+    // =======================================================
+    // ✅ FIX: collectTemplateData() is now OUTSIDE finishTemplate()
+    // =======================================================
+    function collectTemplateData() {
+      var templateName = document.getElementById('templateName')?.value || "";
+      var templateType = document.querySelector('input[name="templateType"]:checked')?.value || selectedType || "PDF_ONLY";
+
+      var emailConfig = {};
+      if (templateType === "EMAIL_ONLY" || templateType === "BOTH") {
+        emailConfig = {
+          subject: document.getElementById('emailSubject')?.value || "",
+          body: document.getElementById('emailBodyCanvas')?.innerHTML || "",
+          replyTo: document.getElementById('emailReplyTo')?.value || "",
+          cc: document.getElementById('emailCc')?.value || "",
+          bcc: document.getElementById('emailBcc')?.value || "",
+          driveAttachments: activeDriveLinksCache || [],
+          localAttachments: activeLocalFilesCache || []
+        };
+      }
+
+      var config = {
+        condField: document.getElementById('mergeConditionField')?.value || "",
+        condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY",
+        condValue: document.getElementById('mergeConditionValue')?.value || "",
+        templateUrl: document.getElementById('docTemplateUrl')?.value || "",
+        folderDestination: document.getElementById('targetFolderInput')?.value || "",
+        format: document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF",
+        namePattern: document.getElementById('fileNamePattern')?.value || "",
+        tagMappings: getTagMappings() || {}
+      };
+
+      return {
+        name: templateName,
+        type: templateType,
+        emailConfig: emailConfig,
+        config: config
+      };
+    }
+
+    // =======================================================
+    // ✅ FIX: finishTemplate() is now clean
+    // =======================================================
     function finishTemplate() {
       if (isFinishing) return;
       if (!validateCurrentStep(1)) return;
@@ -1295,92 +1417,7 @@
           }
           alert("Error processing final save configuration: " + error.message);
         })
-        .SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId);
-    }
-
-    function saveTemplate(successCallback, errorCallback) {
-      var config = {
-        condField: document.getElementById('mergeConditionField')?.value || "",
-        condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY",
-        condValue: document.getElementById('mergeConditionValue')?.value || ""
-      };
-      if (selectedType === "PDF_ONLY" || selectedType === "BOTH") {
-        config.templateUrl = document.getElementById('docTemplateUrl')?.value || "";
-        config.tagMappings = getTagMappings();
-        config.format = document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF";
-        config.namePattern = document.getElementById('fileNamePattern')?.value || "";
-        config.folderDestination = document.getElementById('targetFolderInput')?.value || "";
-      }
-      var template = {
-        id: editingTemplateId,
-        name: document.getElementById('templateName')?.value.trim() || "",
-        type: selectedType,
-        config: config,
-        emailConfig: {
-          replyTo: document.getElementById('emailReplyTo')?.value || "",
-          cc: document.getElementById('emailCc')?.value || "",
-          bcc: document.getElementById('emailBcc')?.value || "",
-          subject: document.getElementById('emailSubject')?.value || "Notification",
-          body: document.getElementById('emailBodyCanvas')?.innerHTML || "",
-          driveAttachments: activeDriveLinksCache,
-          localAttachments: activeLocalFilesCache
-        }
-      };
-      google.script.run
-        .withSuccessHandler(function (saved) {
-          if (saved && saved.template && saved.template.id) {
-            editingTemplateId = saved.template.id;
-          }
-          isEditMode = true;
-          google.script.run.withSuccessHandler(function (templates) {
-            existingTemplates = templates || [];
-          }).GET_ALL_TEMPLATES();
-          if (successCallback) successCallback(editingTemplateId);
-        })
-        .withFailureHandler(function (err) {
-          if (errorCallback) {
-            errorCallback(err);
-          } else {
-            alert("❌ Error saving configurations: " + err.message);
-          }
-        })
-        .SAVE_TEMPLATE(template);
-    }
-
-    function collectTemplateData() {
-      var templateName = document.getElementById('templateName')?.value || "";
-      var templateType = document.querySelector('input[name="templateType"]:checked')?.value || selectedType || "PDF_ONLY";
-
-      var emailConfig = {};
-      if (templateType === "EMAIL_ONLY" || templateType === "BOTH") {
-        emailConfig = {
-          subject: document.getElementById('emailSubject')?.value || "",
-          body: document.getElementById('emailBodyCanvas')?.innerHTML || "",
-          replyTo: document.getElementById('emailReplyTo')?.value || "",
-          cc: document.getElementById('emailCc')?.value || "",
-          bcc: document.getElementById('emailBcc')?.value || "",
-          driveAttachments: activeDriveLinksCache || [],
-          localAttachments: activeLocalFilesCache || []
-        };
-      }
-
-      var config = {
-        condField: document.getElementById('mergeConditionField')?.value || "",
-        condOperator: document.getElementById('mergeConditionOperator')?.value || "NOT_EMPTY",
-        condValue: document.getElementById('mergeConditionValue')?.value || "",
-        templateUrl: document.getElementById('docTemplateUrl')?.value || "",
-        folderDestination: document.getElementById('targetFolderInput')?.value || "",
-        format: document.querySelector('input[name="fileFormat"]:checked')?.value || "PDF",
-        namePattern: document.getElementById('fileNamePattern')?.value || "",
-        tagMappings: getTagMappings() || {}
-      };
-
-      return {
-        name: templateName,
-        type: templateType,
-        emailConfig: emailConfig,
-        config: config
-      };
+        .SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId, true);
     }
   </script>
 
@@ -1474,6 +1511,31 @@
             });
 
             select.addEventListener('change', function () {
+              var parentRow = this.closest('tr');
+              var td = parentRow.querySelector('td:first-child');
+
+              // Remove existing indicators
+              var existingSpan = td.querySelector('.mismatch-span');
+              if (existingSpan) existingSpan.remove();
+              var existingCheck = td.querySelector('.checkmark');
+              if (existingCheck) existingCheck.remove();
+
+              if (this.value !== "") {
+                // Mapped - Green
+                parentRow.style.backgroundColor = '#e6f4ea';
+                parentRow.style.borderLeft = '3px solid #137333';
+                this.style.borderColor = '#137333';
+                td.innerHTML = td.innerHTML.split(' <span')[0];
+                td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
+              } else {
+                // Unmapped - Red
+                parentRow.style.backgroundColor = '#fce8e6';
+                parentRow.style.borderLeft = '3px solid #d93025';
+                this.style.borderColor = '#d93025';
+                td.innerHTML = td.innerHTML.split(' <span')[0];
+                td.innerHTML += ' <span class="mismatch-span">⚠️ ! (Map Manually)</span>';
+              }
+
               updateMismatchWarning();
             });
 
@@ -1592,16 +1654,16 @@
             condSelect.appendChild(opt);
           });
 
-           // =======================================================
-    // FIX: Set default to "Recipient Email" if exists
-    // =======================================================
-    for (var i = 0; i < condSelect.options.length; i++) {
-      if (condSelect.options[i].value.toLowerCase().indexOf("recipient email") !== -1) {
-        condSelect.value = condSelect.options[i].value;
-        break;
-      }
-    }
-  }
+          // =======================================================
+          // FIX: Set default to "Recipient Email" if exists
+          // =======================================================
+          for (var i = 0; i < condSelect.options.length; i++) {
+            if (condSelect.options[i].value.toLowerCase().indexOf("recipient email") !== -1) {
+              condSelect.value = condSelect.options[i].value;
+              break;
+            }
+          }
+        }
 
         var tagsContainer = document.getElementById('fileNameTagsContainer');
         if (tagsContainer) {

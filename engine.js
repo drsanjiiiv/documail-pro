@@ -15,13 +15,6 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
     var sheet = ss.getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
 
-     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      return "No data rows found. Please add data to your sheet.";
-    }
-    
-    var dataValues = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
-
     // Find column indices
     var docStatusColIdx = -1;
     var docIdColIdx = -1;
@@ -62,6 +55,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
 
     var dataValues = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
     var processedCount = 0;
+    var skippedCount = 0;
 
     // Find criteria column
     var criteriaColIdx = allHeaders.indexOf(payload.condField);
@@ -92,7 +86,6 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
           destinationFolder = DriveApp.getFolderById(folderId);
         }
       } catch (e) {
-        // Use root folder if error
         destinationFolder = DriveApp.getRootFolder();
       }
     }
@@ -121,7 +114,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
       if (!payload.isPreview) {
         var existingStatus = String(rowData[docStatusColIdx] || "").trim();
         if (existingStatus === "Success") {
-          processedCount++;
+          skippedCount++;
           continue;
         }
       }
@@ -151,61 +144,56 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
       var body = newDoc.getBody();
 
       // Replace tags using mapped values - PRESERVE FORMATTING
-if (payload.tagMappings) {
-  for (var docTag in payload.tagMappings) {
-    if (payload.tagMappings.hasOwnProperty(docTag)) {
-      var sheetColumn = payload.tagMappings[docTag];
-      var replacementValue = "";
-      var mappedColIdx = allHeaders.indexOf(sheetColumn);
-      if (mappedColIdx !== -1) {
-        var rawValue = rowData[mappedColIdx];
-        if (rawValue instanceof Date) {
-          replacementValue = FORMAT_DATE_FOR_DISPLAY(rawValue);
-        } else if (typeof rawValue === 'number') {
-          replacementValue = FORMAT_NUMBER_FOR_DISPLAY(rawValue);
-        } else {
-          replacementValue = String(rawValue || "");
+      if (payload.tagMappings) {
+        for (var docTag in payload.tagMappings) {
+          if (payload.tagMappings.hasOwnProperty(docTag)) {
+            var sheetColumn = payload.tagMappings[docTag];
+            var replacementValue = "";
+            var mappedColIdx = allHeaders.indexOf(sheetColumn);
+            if (mappedColIdx !== -1) {
+              var rawValue = rowData[mappedColIdx];
+              if (rawValue instanceof Date) {
+                replacementValue = FORMAT_DATE_FOR_DISPLAY(rawValue);
+              } else if (typeof rawValue === 'number') {
+                replacementValue = FORMAT_NUMBER_FOR_DISPLAY(rawValue);
+              } else {
+                replacementValue = String(rawValue || "");
+              }
+            }
+
+            var searchPattern = "{" + docTag + "}";
+            var foundElement = body.findText(searchPattern);
+
+            while (foundElement) {
+              var element = foundElement.getElement();
+              if (element.editAsText) {
+                var startOffset = foundElement.getStartOffset();
+                var endOffsetInclusive = foundElement.getEndOffsetInclusive();
+
+                var text = element.asText();
+                var fontFamily = text.getFontFamily(startOffset);
+                var fontSize = text.getFontSize(startOffset);
+                var isBold = text.isBold(startOffset);
+                var isItalic = text.isItalic(startOffset);
+                var isUnderline = text.isUnderline(startOffset);
+                var foregroundColor = text.getForegroundColor(startOffset);
+
+                text.deleteText(startOffset, endOffsetInclusive);
+                text.insertText(startOffset, replacementValue);
+
+                var newEndOffset = startOffset + replacementValue.length - 1;
+                if (fontFamily) text.setFontFamily(startOffset, newEndOffset, fontFamily);
+                if (fontSize) text.setFontSize(startOffset, newEndOffset, fontSize);
+                if (isBold !== null) text.setBold(startOffset, newEndOffset, isBold);
+                if (isItalic !== null) text.setItalic(startOffset, newEndOffset, isItalic);
+                if (isUnderline !== null) text.setUnderline(startOffset, newEndOffset, isUnderline);
+                if (foregroundColor) text.setForegroundColor(startOffset, newEndOffset, foregroundColor);
+              }
+              foundElement = body.findText(searchPattern, foundElement);
+            }
+          }
         }
       }
-
-      var searchPattern = "{" + docTag + "}";
-      var foundElement = body.findText(searchPattern);
-
-      while (foundElement) {
-        var element = foundElement.getElement();
-        if (element.editAsText) {
-          var startOffset = foundElement.getStartOffset();
-          var endOffsetInclusive = foundElement.getEndOffsetInclusive();
-          
-          // Get the formatting from the existing text
-          var text = element.asText();
-          var fontFamily = text.getFontFamily(startOffset);
-          var fontSize = text.getFontSize(startOffset);
-          var isBold = text.isBold(startOffset);
-          var isItalic = text.isItalic(startOffset);
-          var isUnderline = text.isUnderline(startOffset);
-          var foregroundColor = text.getForegroundColor(startOffset);
-          
-          // Delete the tag
-          text.deleteText(startOffset, endOffsetInclusive);
-          
-          // Insert the replacement with same formatting
-          text.insertText(startOffset, replacementValue);
-          
-          // Apply the original formatting to the inserted text
-          var newEndOffset = startOffset + replacementValue.length - 1;
-          if (fontFamily) text.setFontFamily(startOffset, newEndOffset, fontFamily);
-          if (fontSize) text.setFontSize(startOffset, newEndOffset, fontSize);
-          if (isBold !== null) text.setBold(startOffset, newEndOffset, isBold);
-          if (isItalic !== null) text.setItalic(startOffset, newEndOffset, isItalic);
-          if (isUnderline !== null) text.setUnderline(startOffset, newEndOffset, isUnderline);
-          if (foregroundColor) text.setForegroundColor(startOffset, newEndOffset, foregroundColor);
-        }
-        foundElement = body.findText(searchPattern, foundElement);
-      }
-    }
-  }
-}
 
       newDoc.saveAndClose();
 
@@ -247,7 +235,32 @@ if (payload.tagMappings) {
     }
 
     var mode = payload.isPreview ? "PREVIEW" : "PRODUCTION";
-    return mode + " completed! Processed " + processedCount + " record(s). " + (payload.format === "PDF" ? "PDF files" : "Google Docs") + " saved to: " + destinationFolder.getName();
+
+    // =======================================================
+    // CLEAR NOTIFICATION MESSAGES
+    // =======================================================
+    if (skippedCount > 0 && processedCount === 0) {
+      return "⚠️ Execution Aborted\n\n" +
+        "All eligible rows already have PDFs generated.\n" +
+        "No new PDFs were created.";
+    }
+
+    if (skippedCount > 0 && processedCount > 0) {
+      return mode + " completed! " +
+        "✅ Processed: " + processedCount + " new record(s). " +
+        "⏭️ Skipped: " + skippedCount + " existing record(s). " +
+        (payload.format === "PDF" ? "PDF files" : "Google Docs") +
+        " saved to: " + destinationFolder.getName();
+    }
+
+    if (processedCount === 0) {
+      return "No eligible records found matching your filter conditions.";
+    }
+
+    return mode + " completed! " +
+      "✅ Processed " + processedCount + " record(s). " +
+      (payload.format === "PDF" ? "PDF files" : "Google Docs") +
+      " saved to: " + destinationFolder.getName();
 
   } catch (err) {
     return "Error: " + err.toString();
@@ -261,8 +274,8 @@ if (payload.tagMappings) {
 // FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW Starts
 // ==========================================
 function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, rowNum, allHeaders) {
-   if (!singleRowData || singleRowData.length === 0) {
-    return { success: false, error: "No data row provided." };  
+  if (!singleRowData || singleRowData.length === 0) {
+    return { success: false, error: "No data row provided." };
   }
   try {
     // Get template file ID
@@ -334,7 +347,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
             if (element.editAsText) {
               var startOffset = foundElement.getStartOffset();
               var endOffsetInclusive = foundElement.getEndOffsetInclusive();
-              
+
               var text = element.asText();
               var fontFamily = text.getFontFamily(startOffset);
               var fontSize = text.getFontSize(startOffset);
@@ -342,10 +355,10 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
               var isItalic = text.isItalic(startOffset);
               var isUnderline = text.isUnderline(startOffset);
               var foregroundColor = text.getForegroundColor(startOffset);
-              
+
               text.deleteText(startOffset, endOffsetInclusive);
               text.insertText(startOffset, replacementValue);
-              
+
               var newEndOffset = startOffset + replacementValue.length - 1;
               if (fontFamily) text.setFontFamily(startOffset, newEndOffset, fontFamily);
               if (fontSize) text.setFontSize(startOffset, newEndOffset, fontSize);
@@ -413,8 +426,8 @@ function EXTRACT_TEMPLATE_TAGS_STREAM(docUrl) {
     var tagMatchRegex = /\{([^}]+)\}/g;
     var matches = [];
     var matchItem;
-    
-     // Get valid headers (excludes system columns)
+
+    // Get valid headers (excludes system columns)
     var validHeaders = GET_LIVE_SHEET_HEADERS();
     var validHeaderSet = {};
     for (var i = 0; i < validHeaders.length; i++) {
@@ -447,13 +460,13 @@ function PREVIEW_TEMPLATE(templateId) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
 
-     // =======================================================
+    // =======================================================
     // CHECK IF SHEET HAS DATA ROWS
     // =======================================================
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
-      return { 
-        name: template.name, 
+      return {
+        name: template.name,
         previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 20px;">' +
           '<h2 style="color:#c5221f;">❌ No Data Found</h2>' +
           '<hr>' +
@@ -475,7 +488,7 @@ function PREVIEW_TEMPLATE(templateId) {
     var criteriaColIdx = allHeaders.indexOf(template.config.condField);
     if (criteriaColIdx === -1) criteriaColIdx = 0;
 
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
+    var data = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
     var previewRow = null;
 
     for (var i = 0; i < data.length; i++) {
@@ -496,7 +509,9 @@ function PREVIEW_TEMPLATE(templateId) {
       return { name: template.name, previewHtml: "<p>No rows match your filter conditions.</p>" };
     }
 
-    // Build the preview HTML - show file name with tags replaced
+    // =======================================================
+    // BUILD DISPLAY FILENAME (NO NUMBER FORMATTING)
+    // =======================================================
     var displayFileName = template.config?.namePattern || "Document";
     for (var h = 0; h < allHeaders.length; h++) {
       var header = allHeaders[h];
@@ -512,7 +527,9 @@ function PREVIEW_TEMPLATE(templateId) {
       }
     }
 
-    // Email preview with formatted dates
+    // =======================================================
+    // EMAIL PREVIEW WITH FORMATTED VALUES (Dates + Numbers)
+    // =======================================================
     var recipientEmail = previewRow[emailColIdx] || "example@email.com";
     var emailSubject = template.emailConfig?.subject || "";
     var emailBody = template.emailConfig?.body || "";
@@ -523,6 +540,8 @@ function PREVIEW_TEMPLATE(templateId) {
         var val = previewRow[h];
         if (val instanceof Date) {
           val = FORMAT_DATE_FOR_DISPLAY(val);
+        } else if (typeof val === 'number') {
+          val = FORMAT_NUMBER_FOR_DISPLAY(val);
         } else {
           val = String(val || "");
         }
@@ -532,91 +551,97 @@ function PREVIEW_TEMPLATE(templateId) {
       }
     }
 
+    // =======================================================
+    // BUILD PREVIEW HTML
+    // =======================================================
     var previewHtml = '<div style="font-family: Roboto, sans-serif; padding: 20px;">';
     previewHtml += '<h2 style="color:#1a73e8;">✅ Preview Generated Successfully!</h2>';
     previewHtml += '<hr>';
     previewHtml += '<p><strong>📄 Template Name:</strong> ' + escapeHtml(template.name) + '</p>';
     previewHtml += '<p><strong>📋 Template Type:</strong> ' + (template.type === "PDF_ONLY" ? "PDF Only" : template.type === "EMAIL_ONLY" ? "Email Only" : "PDF & Email") + '</p>';
 
+    // =======================================================
+    // PDF SECTION
+    // =======================================================
     if (template.type === "PDF_ONLY" || template.type === "BOTH") {
-  // Try to find the generated file
-var fileUrl = '';
-var fileName = '';
-try {
-  var folderId = template.config?.folderDestination;
-  
-  // Search in specified folder
-  if (folderId) {
-    var folderIdExtracted = folderId.split("/folders/")[1] || folderId.split("id=")[1];
-    if (folderIdExtracted) {
+      // Try to find the generated file
+      var fileUrl = '';
+      var fileName = '';
       try {
-        var folder = DriveApp.getFolderById(folderIdExtracted);
-        var files = folder.getFiles();
-        var currentTime = new Date().getTime();
-        var latestFile = null;
-        var latestTime = 0;
-        while (files.hasNext()) {
-          var file = files.next();
-          var fileCreated = file.getDateCreated().getTime();
-          if (fileCreated > currentTime - 60000 && file.getName().indexOf("PROV-") !== -1) {
-            if (fileCreated > latestTime) {
-              latestTime = fileCreated;
-              latestFile = file;
-            }
+        var folderId = template.config?.folderDestination;
+
+        if (folderId) {
+          var folderIdExtracted = folderId.split("/folders/")[1] || folderId.split("id=")[1];
+          if (folderIdExtracted) {
+            try {
+              var folder = DriveApp.getFolderById(folderIdExtracted);
+              var files = folder.getFiles();
+              var currentTime = new Date().getTime();
+              var latestFile = null;
+              var latestTime = 0;
+              while (files.hasNext()) {
+                var file = files.next();
+                var fileCreated = file.getDateCreated().getTime();
+                if (fileCreated > currentTime - 60000 && file.getName().indexOf("PROV-") !== -1) {
+                  if (fileCreated > latestTime) {
+                    latestTime = fileCreated;
+                    latestFile = file;
+                  }
+                }
+              }
+              if (latestFile) {
+                fileUrl = latestFile.getUrl();
+                fileName = latestFile.getName();
+              }
+            } catch (e) { }
           }
         }
-        if (latestFile) {
-          fileUrl = latestFile.getUrl();
-          fileName = latestFile.getName();
+
+        // If not found in folder, search root Drive
+        if (!fileUrl) {
+          var rootFiles = DriveApp.getFiles();
+          var currentTime = new Date().getTime();
+          var latestFile = null;
+          var latestTime = 0;
+          while (rootFiles.hasNext()) {
+            var file = rootFiles.next();
+            var fileCreated = file.getDateCreated().getTime();
+            if (fileCreated > currentTime - 60000 && file.getName().indexOf("PROV-") !== -1) {
+              if (fileCreated > latestTime) {
+                latestTime = fileCreated;
+                latestFile = file;
+              }
+            }
+          }
+          if (latestFile) {
+            fileUrl = latestFile.getUrl();
+            fileName = latestFile.getName();
+          }
         }
-      } catch(e) {}
-    }
-  }
-  
-  // =======================================================
-  // SEARCH ROOT DRIVE IF NOT FOUND
-  // =======================================================
-  if (!fileUrl) {
-    var rootFiles = DriveApp.getFiles();
-    var currentTime = new Date().getTime();
-    var latestFile = null;
-    var latestTime = 0;
-    while (rootFiles.hasNext()) {
-      var file = rootFiles.next();
-      var fileCreated = file.getDateCreated().getTime();
-      if (fileCreated > currentTime - 60000 && file.getName().indexOf("PROV-") !== -1) {
-        if (fileCreated > latestTime) {
-          latestTime = fileCreated;
-          latestFile = file;
-        }
+      } catch (e) { }
+
+      previewHtml += '<div style="background:#e8f0fe; padding:12px; border-radius:6px; margin:10px 0;">';
+      previewHtml += '<h3 style="color:#1a73e8; margin:0 0 10px 0;">📄 Document Preview</h3>';
+      previewHtml += '<p><strong>Document Name:</strong> ' + escapeHtml(displayFileName) + '</p>';
+      previewHtml += '<p><strong>Output Format:</strong> ' + (template.config?.format === "PDF" ? "PDF Document" : "Editable Google Doc") + '</p>';
+
+      if (fileUrl) {
+        previewHtml += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0; border-left:4px solid #137333;">';
+        previewHtml += '<p style="margin:0; color:#137333;"><strong>✅ Preview File Generated!</strong></p>';
+        previewHtml += '<p style="margin:5px 0;"><strong>File:</strong> ' + escapeHtml(fileName) + '</p>';
+        previewHtml += '<p style="margin:5px 0;"><a href="' + fileUrl + '" target="_blank">📂 Click here to open the preview file</a></p>';
+        previewHtml += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">⚠️ This file has "PREVIEW ONLY" watermark. Do not use for production.</p>';
+        previewHtml += '</div>';
+      } else {
+        previewHtml += '<p><em>✅ Preview file generated with PROV- prefix. Check your Google Drive folder.</em></p>';
       }
-    }
-    if (latestFile) {
-      fileUrl = latestFile.getUrl();
-      fileName = latestFile.getName();
-    }
-  }
-} catch(e) {}
 
-  previewHtml += '<div style="background:#e8f0fe; padding:12px; border-radius:6px; margin:10px 0;">';
-  previewHtml += '<h3 style="color:#1a73e8; margin:0 0 10px 0;">📄 Document Preview</h3>';
-  previewHtml += '<p><strong>Document Name:</strong> ' + escapeHtml(displayFileName) + '</p>';
-  previewHtml += '<p><strong>Output Format:</strong> ' + (template.config?.format === "PDF" ? "PDF Document" : "Editable Google Doc") + '</p>';
-  
-  if (fileUrl) {
-    previewHtml += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0; border-left:4px solid #137333;">';
-    previewHtml += '<p style="margin:0; color:#137333;"><strong>✅ Preview File Generated!</strong></p>';
-    previewHtml += '<p style="margin:5px 0;"><strong>File:</strong> ' + escapeHtml(fileName) + '</p>';
-    previewHtml += '<p style="margin:5px 0;"><a href="' + fileUrl + '" target="_blank">📂 Click here to open the preview file</a></p>';
-    previewHtml += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">⚠️ This file is for PREVIEW ONLY. DO NOT USE FOR PRODUCTION</p>';
-    previewHtml += '</div>';
-  } else {
-    previewHtml += '<p><em>✅ Preview file generated with PROV- prefix. Check your Google Drive folder.</em></p>';
-  }
-  
-  previewHtml += '</div>';
-}
+      previewHtml += '</div>';
+    }
 
+    // =======================================================
+    // EMAIL SECTION
+    // =======================================================
     if (template.type === "EMAIL_ONLY" || template.type === "BOTH") {
       previewHtml += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0;">';
       previewHtml += '<h3 style="color:#137333; margin:0 0 10px 0;">✉️ Email Preview</h3>';
@@ -663,31 +688,31 @@ function RUN_TEMPLATE(templateId) {
   }
 
   if (template.type === "EMAIL_ONLY") {
-  var allHeaders = GET_ALL_RAW_HEADERS();
-  var emailColIdx = -1;
+    var allHeaders = GET_ALL_RAW_HEADERS();
+    var emailColIdx = -1;
 
-  for (var c = 0; c < allHeaders.length; c++) {
-    var hName = String(allHeaders[c]).toLowerCase().trim();
-    if (hName.indexOf("recipient email") !== -1) emailColIdx = c;
-  }
-  if (emailColIdx === -1) emailColIdx = 4;
-
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, template.name);
-
-  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
-  var selectedRows = [];
-
-  for (var i = 0; i < data.length; i++) {
-    var statusValue = String(data[i][statusColIdx] || "").trim();
-    if (statusValue === "") {
-      selectedRows.push(i + 2);
+    for (var c = 0; c < allHeaders.length; c++) {
+      var hName = String(allHeaders[c]).toLowerCase().trim();
+      if (hName.indexOf("recipient email") !== -1) emailColIdx = c;
     }
-  }   
+    if (emailColIdx === -1) emailColIdx = 4;
 
-  if (selectedRows.length === 0) return "No eligible records found for template: " + template.name;
-  return executeEmailSend(selectedRows, template.emailConfig, template.name);
-}
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, template.name);
+
+    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
+    var selectedRows = [];
+
+    for (var i = 0; i < data.length; i++) {
+      var statusValue = String(data[i][statusColIdx] || "").trim();
+      if (statusValue === "") {
+        selectedRows.push(i + 2);
+      }
+    }
+
+    if (selectedRows.length === 0) return "No eligible records found for template: " + template.name;
+    return executeEmailSend(selectedRows, template.emailConfig, template.name);
+  }
 
   if (template.type === "BOTH") {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();

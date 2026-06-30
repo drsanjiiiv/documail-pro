@@ -7,7 +7,7 @@
  * ============================================================================
  */
 
-function executeEmailSend(selectedRows, emailConfig, templateName) {
+function executeEmailSend(selectedRows, emailConfig, templateName, tagMappings) { // 👈 ADDED tagMappings
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var allHeaders = GET_ALL_RAW_HEADERS();
   var emailColIdx = -1;
@@ -23,6 +23,9 @@ function executeEmailSend(selectedRows, emailConfig, templateName) {
   var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
   var sent = 0;
   var errors = [];
+  
+  // Use manual mappings if provided, fallback to standard header-matching
+  var mappings = tagMappings || {};
 
   for (var i = 0; i < data.length; i++) {
     var rowNum = i + 2;
@@ -47,23 +50,50 @@ function executeEmailSend(selectedRows, emailConfig, templateName) {
     var body = emailConfig.body || "";
 
     // =======================================================
-    // REPLACE TAGS WITH FORMATTED VALUES
+    // ✅ FIX: ITERATE OVER THE DICTIONARY MAPPINGS LIVE
     // =======================================================
-    for (var h = 0; h < allHeaders.length; h++) {
-      var header = allHeaders[h];
-      if (header) {
-        var rawValue = data[i][h];
-        var val = "";
-        if (rawValue instanceof Date) {
-          val = FORMAT_DATE_FOR_DISPLAY(rawValue);
-        } else if (typeof rawValue === 'number') {
-          val = FORMAT_NUMBER_FOR_DISPLAY(rawValue);
-        } else {
-          val = String(rawValue || "");
+    if (Object.keys(mappings).length > 0) {
+      for (var docTag in mappings) {
+        if (mappings.hasOwnProperty(docTag)) {
+          var targetHeader = mappings[docTag];
+          var headerIdx = allHeaders.indexOf(targetHeader);
+          
+          if (headerIdx !== -1) {
+            var rawValue = data[i][headerIdx];
+            var val = "";
+            
+            if (rawValue instanceof Date) {
+              val = FORMAT_DATE_FOR_DISPLAY(rawValue);
+            } else if (typeof rawValue === 'number') {
+              val = FORMAT_NUMBER_FOR_DISPLAY(rawValue); // Evaluates custom formatting schemas!
+            } else {
+              val = String(rawValue || "");
+            }
+            
+            var regex = new RegExp("\\{" + escapeRegex(docTag) + "\\}", "g");
+            subject = subject.replace(regex, val);
+            body = body.replace(regex, val);
+          }
         }
-        var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
-        subject = subject.replace(regex, val);
-        body = body.replace(regex, val);
+      }
+    } else {
+      // Fallback behavior if no template mapping configurations exist
+      for (var h = 0; h < allHeaders.length; h++) {
+        var header = allHeaders[h];
+        if (header) {
+          var rawValue = data[i][h];
+          var val = "";
+          if (rawValue instanceof Date) {
+            val = FORMAT_DATE_FOR_DISPLAY(rawValue);
+          } else if (typeof rawValue === 'number') {
+            val = FORMAT_NUMBER_FOR_DISPLAY(rawValue);
+          } else {
+            val = String(rawValue || "");
+          }
+          var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+          subject = subject.replace(regex, val);
+          body = body.replace(regex, val);
+        }
       }
     }
 
@@ -85,10 +115,9 @@ function executeEmailSend(selectedRows, emailConfig, templateName) {
   return "✅ Successfully sent " + sent + " emails!";
 }
 
-function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
+function executeEmailSendWithAttachments(emailConfig, folderId, templateName, tagMappings) { // 👈 ADDED tagMappings
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
-
     var emailColIdx = -1;
 
     for (var c = 0; c < allHeaders.length; c++) {
@@ -97,10 +126,9 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
     }
     if (emailColIdx === -1) emailColIdx = 4;
 
-    // NEW: Get or create status column for this specific template
     var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, templateName);
+    var mappings = tagMappings || {};
 
-    // Get all PDF files from the folder (generated in the last 2 minutes)
     var pdfFiles = [];
     if (folderId) {
         var folder = DriveApp.getFolderById(folderId);
@@ -121,9 +149,7 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
 
     for (var i = 0; i < data.length; i++) {
         var rowNum = i + 2;
-        // Check if already sent for THIS template
         var existingStatus = String(data[i][statusColIdx] || "").trim();
-
         if (existingStatus !== "") continue;
 
         var recipient = data[i][emailColIdx];
@@ -132,21 +158,47 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
         var subject = emailConfig.subject || "";
         var body = emailConfig.body || "";
 
-        for (var h = 0; h < allHeaders.length; h++) {
-            var header = allHeaders[h];
-            if (header) {
-                var val = data[i][h];
+        // =======================================================
+        // ✅ FIX: ITERATE OVER THE DICTIONARY MAPPINGS LIVE WITH PDF
+        // =======================================================
+        if (Object.keys(mappings).length > 0) {
+          for (var docTag in mappings) {
+            if (mappings.hasOwnProperty(docTag)) {
+              var targetHeader = mappings[docTag];
+              var headerIdx = allHeaders.indexOf(targetHeader);
+              
+              if (headerIdx !== -1) {
+                var val = data[i][headerIdx];
                 if (val instanceof Date) {
-                    val = FORMAT_DATE_FOR_DISPLAY(val);
+                  val = FORMAT_DATE_FOR_DISPLAY(val);
                 } else if (typeof val === 'number') {
-                    val = FORMAT_NUMBER_FOR_DISPLAY(val);
+                  val = FORMAT_NUMBER_FOR_DISPLAY(val);
                 } else {
-                    val = String(val || "");
+                  val = String(val || "");
                 }
-                var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+                var regex = new RegExp("\\{" + escapeRegex(docTag) + "\\}", "g");
                 subject = subject.replace(regex, val);
                 body = body.replace(regex, val);
+              }
             }
+          }
+        } else {
+          for (var h = 0; h < allHeaders.length; h++) {
+              var header = allHeaders[h];
+              if (header) {
+                  var val = data[i][h];
+                  if (val instanceof Date) {
+                      val = FORMAT_DATE_FOR_DISPLAY(val);
+                  } else if (typeof val === 'number') {
+                      val = FORMAT_NUMBER_FOR_DISPLAY(val);
+                  } else {
+                      val = String(val || "");
+                  }
+                  var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+                  subject = subject.replace(regex, val);
+                  body = body.replace(regex, val);
+              }
+          }
         }
 
         var mailOptions = { htmlBody: body };
@@ -154,7 +206,6 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
         if (emailConfig.cc) mailOptions.cc = emailConfig.cc;
         if (emailConfig.bcc) mailOptions.bcc = emailConfig.bcc;
 
-        // Attach PDF files
         var attachments = [];
         for (var p = 0; p < pdfFiles.length; p++) {
             attachments.push(pdfFiles[p].getBlob());
@@ -168,7 +219,7 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
             var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
             sheet.getRange(rowNum, statusColIdx + 1).setValue("Sent to " + recipient + " on " + timestamp + " (with PDF)");
             sent++;
-            CHECK_DAILY_QUOTA_ALERT(); // <-- Single line injection handles it!
+            CHECK_DAILY_QUOTA_ALERT();
         } catch (e) {
             errors.push("Row " + rowNum + ": " + e.message);
             sheet.getRange(rowNum, statusColIdx + 1).setValue("Failed: " + e.message);
@@ -181,17 +232,18 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName) {
     return "✅ Successfully sent " + sent + " emails (with PDF attachments)!";
 }
 
+// =======================================================
+// ✅ FIX: PASS REFRESHED PARAM MAPPINGS VIA CONTROLLER
+// =======================================================
 function EXECUTE_TEMPLATE_ACTION(params) {
+    var mappings = (params.config && params.config.tagMappings) ? params.config.tagMappings : {};
+    
     if (params.type === "EMAIL_ONLY") {
-        return executeEmailSend(params.selectedRows, params.emailConfig, params.templateName);
+        return executeEmailSend(params.selectedRows, params.emailConfig, params.templateName, mappings);
     }
     return "PDF generation coming soon";
 }
 
-/**
- * Monitors the remaining daily email quota.
- * Automatically fires a single alert email to the sender when exactly 10 slots remain.
- */
 function CHECK_DAILY_QUOTA_ALERT() {
     try {
         if (MailApp.getRemainingDailyQuota() === 10) {
@@ -210,10 +262,6 @@ function CHECK_DAILY_QUOTA_ALERT() {
     }
 }
 
-/**
- * Serves the active refresh timestamp token to the Sidebar background listener loop.
- * This fixes the missing function crash and allows auto-refresh to process cleanly.
- */
 function CHECK_SIDEBAR_REFRESH() {
   try {
     var sheetName = SpreadsheetApp.getActiveSheet().getName();
@@ -225,9 +273,6 @@ function CHECK_SIDEBAR_REFRESH() {
   }
 }
 
-/**
- * Alternative manual layout trigger utility if called by legacy handlers.
- */
 function SIGNAL_SIDEBAR_REFRESH() {
   try {
     var sheetName = SpreadsheetApp.getActiveSheet().getName();
@@ -238,4 +283,3 @@ function SIGNAL_SIDEBAR_REFRESH() {
     return false;
   }
 }
-//file content end

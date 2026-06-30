@@ -301,11 +301,13 @@ function SAVE_TEMPLATE_WITH_SCHEDULE(templateData, schedule, templateId, sendEma
   var template = templateData;
   var isNewTemplate = false;
 
-  // If templateId exists, find and update it
-  if (templateId) {
-    template.id = templateId;
+  // 👇 SAFETY ADDITION: Fallback to internal object ID if parameter is missed
+  var effectiveId = templateId || templateData.id || null;
+
+  if (effectiveId) {
+    template.id = effectiveId;
     for (var i = 0; i < templates.length; i++) {
-      if (templates[i].id === templateId) {
+      if (templates[i].id === effectiveId) {
         existingIndex = i;
         break;
       }

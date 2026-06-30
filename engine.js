@@ -817,14 +817,21 @@ function RUN_TEMPLATE(templateId) {
       var body = template.emailConfig.body || "";
 
       for (var h = 0; h < allHeaders.length; h++) {
-        var header = allHeaders[h];
-        if (header) {
-          var val = String(data[i][h] || "");
-          var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
-          subject = subject.replace(regex, val);
-          body = body.replace(regex, val);
+    var header = allHeaders[h];
+    if (header) {
+        var val = data[i][h];
+        if (val instanceof Date) {
+            val = FORMAT_DATE_FOR_DISPLAY(val);
+        } else if (typeof val === 'number') {
+            val = FORMAT_NUMBER_FOR_DISPLAY(val);
+        } else {
+            val = String(val || "");
         }
-      }
+        var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+        subject = subject.replace(regex, val);
+        body = body.replace(regex, val);
+    }
+}
 
       var mailOptions = { htmlBody: body };
       if (template.emailConfig.replyTo) mailOptions.replyTo = template.emailConfig.replyTo;

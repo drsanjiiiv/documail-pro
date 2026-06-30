@@ -211,6 +211,10 @@ function SHOW_PREVIEW_DIALOG(templateId) {
 // SHOW RUN DIALOG
 // =======================================================
 
+// =======================================================
+// SHOW RUN DIALOG
+// =======================================================
+
 function SHOW_RUN_DIALOG(templateId) {
   // =======================================================
   // SHOW LOADING POPUP FIRST
@@ -248,19 +252,48 @@ function SHOW_RUN_DIALOG(templateId) {
     return;
   }
 
-  // Ensure tag mappings exist for PDF
-  if (template.type === "PDF_ONLY" || template.type === "BOTH") {
-    if (!template.config.tagMappings || Object.keys(template.config.tagMappings).length === 0) {
-      var allHeaders = GET_ALL_RAW_HEADERS();
-      var tags = EXTRACT_TEMPLATE_TAGS_STREAM(template.config.templateUrl);
-      template.config.tagMappings = {};
-      for (var i = 0; i < tags.length; i++) {
-        if (allHeaders.indexOf(tags[i]) !== -1) {
-          template.config.tagMappings[tags[i]] = tags[i];
+  try {
+    // Process mapping configurations for document exports safely
+    if (template.type === "PDF_ONLY" || template.type === "BOTH") {
+      var config = JSON.parse(JSON.stringify(template.config));
+      config.isPreview = false; // Mark this as a live production run loop
+
+      // Fallback auto-mapping logic if dictionary configurations are empty
+      if (!config.tagMappings) {
+        config.tagMappings = {};
+      }
+      
+      if (Object.keys(config.tagMappings).length === 0) {
+        var allHeaders = GET_ALL_RAW_HEADERS();
+        var tags = EXTRACT_TEMPLATE_TAGS_STREAM(config.templateUrl);
+        for (var i = 0; i < tags.length; i++) {
+          if (allHeaders.indexOf(tags[i]) !== -1) {
+            config.tagMappings[tags[i]] = tags[i];
+          }
+        }
+        
+        // Update master template storage if fallback details were written
+        template.config.tagMappings = config.tagMappings;
+        if (typeof SAVE_TEMPLATE === 'function') {
+          SAVE_TEMPLATE(template);
         }
       }
-      SAVE_TEMPLATE(template);
+
+      // 🚀 EXECUTE THE MERGE ACTION LIVE WITH YOUR SAVED CONFIGURATION
+      if (typeof EXECUTE_DOCUMENT_MERGE_ENGINE === 'function') {
+        EXECUTE_DOCUMENT_MERGE_ENGINE(config);
+      }
     }
+  } catch (e) {
+    Logger.log("Execution error inside SHOW_RUN_DIALOG: " + e.toString());
+    
+    // Show user a structural alert popup if the process crashes
+    var exceptionHtml = '<div style="font-family: Roboto, sans-serif; padding: 20px;">';
+    exceptionHtml += '<h2 style="color:#c5221f;">❌ Execution Failed</h2>';
+    exceptionHtml += '<hr><p>' + e.message + '</p></div>';
+    var exceptionOutput = HtmlService.createHtmlOutput(exceptionHtml).setWidth(550).setHeight(250);
+    SpreadsheetApp.getUi().showModalDialog(exceptionOutput, 'Error');
+    return; // Stop processing since it failed
   }
 
   // =======================================================
@@ -338,6 +371,7 @@ function SHOW_RUN_DIALOG(templateId) {
     html += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">📅 Resets every 24 hours</p>';
     html += '</div>';
   }
+  
   // =======================================================
   // SHOW RESULT WITH RED BACKGROUND FOR ERRORS
   // =======================================================
@@ -373,7 +407,7 @@ function SHOW_RUN_DIALOG(templateId) {
     .setHeight(550)
     .setTitle('Execution Result: ' + template.name);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Execution Result: ' + template.name);
-}
+} // 👈 This brace now cleanly ends the entire function framework!
 
 // =======================================================
 // SHOW NOTIFICATION FUNCTIONS

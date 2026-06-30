@@ -883,6 +883,18 @@
         var row = sel.closest('tr');
         var td = row.querySelector('td:first-child');
 
+        // 👇 PREVENT OVERWRITE: If the user manually selected something, keep it green!
+        if (sel.value !== "") {
+          row.style.backgroundColor = '#e6f4ea';
+          row.style.borderLeft = '3px solid #137333';
+          td.innerHTML = td.innerHTML.split(' <span')[0];
+          if (!td.querySelector('.checkmark')) {
+            td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
+          }
+          sel.style.borderColor = '#137333';
+          return; // Skip the red highlight fallback
+        }
+
         // Remove existing indicators
         var existingSpan = td.querySelector('.mismatch-span');
         if (existingSpan) existingSpan.remove();
@@ -899,7 +911,7 @@
           row.style.backgroundColor = '#e6f4ea';
           row.style.borderLeft = '3px solid #137333';
           td.innerHTML = td.innerHTML.split(' <span')[0];
-          td.innerHTML += ' <span style="color:#137333;">✅</span>';
+          td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
           sel.style.borderColor = '#137333';
         }
       });
@@ -915,38 +927,50 @@
         var row = sel.closest('tr');
         var td = row.querySelector('td:first-child');
 
-        // Remove existing indicators
+        // Remove old state attachments safely
         var existingSpan = td.querySelector('.mismatch-span');
         if (existingSpan) existingSpan.remove();
         var existingCheck = td.querySelector('.checkmark');
         if (existingCheck) existingCheck.remove();
 
+        // 👇 EVALUATE LIVE WINDOW STATE ONLY
         if (sel.value === "") {
           any = true;
           row.style.backgroundColor = '#fce8e6';
           row.style.borderLeft = '3px solid #d93025';
           td.innerHTML = td.innerHTML.split(' <span')[0];
           td.innerHTML += ' <span class="mismatch-span">⚠️ ! (Map Manually)</span>';
+          sel.style.borderColor = '#d93025';
         } else {
           mapped++;
           row.style.backgroundColor = '#e6f4ea';
           row.style.borderLeft = '3px solid #137333';
           td.innerHTML = td.innerHTML.split(' <span')[0];
           td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
+          sel.style.borderColor = '#137333';
         }
       });
 
       hasMismatch = any;
 
       var w = document.getElementById('mismatchWarning');
-      if (w) w.style.display = hasMismatch ? 'block' : 'none';
+      if (w) {
+        w.style.display = hasMismatch ? 'block' : 'none';
+        // Dynamically update the warning message if a mismatch still exists
+        if (hasMismatch) {
+          var unmappedCount = total - mapped;
+          w.innerHTML = '⚠️ ' + unmappedCount + ' tag(s) still need mapping. Please choose a spreadsheet column.';
+        }
+      }
 
       var successBox = document.getElementById('matchSuccessBox');
-      if (!hasMismatch && total > 0) {
-        successBox.style.display = 'block';
-        successBox.innerHTML = '✅ All ' + total + ' tags mapped successfully!';
-      } else {
-        successBox.style.display = 'none';
+      if (successBox) {
+        if (!hasMismatch && total > 0) {
+          successBox.style.display = 'block';
+          successBox.innerHTML = '✅ All ' + total + ' tags mapped successfully!';
+        } else {
+          successBox.style.display = 'none';
+        }
       }
 
       var badge = document.getElementById('mappingStatusBadge');
@@ -1004,9 +1028,16 @@
           if (saved && saved.template && saved.template.id) {
             editingTemplateId = saved.template.id;  // ← Capture ID after first save
             isEditMode = true;
+
+            // 👇 ADD THIS STATE REFRESH: Sync the manual mappings to the frontend cache
+            if (saved.template.config && saved.template.config.tagMappings) {
+              pendingTagMappings = saved.template.config.tagMappings;
+            }
+
             google.script.run.withSuccessHandler(function (templates) {
               existingTemplates = templates || [];
             }).GET_ALL_TEMPLATES();
+
             console.log("✅ Auto-saved Step " + step + " (ID: " + editingTemplateId + ")");
           }
         })
@@ -1087,7 +1118,36 @@
         dynamicBackCheck--;
       }
       document.getElementById('backBtn').disabled = !hasBackStep;
-      if (step === 3 && document.getElementById('docTemplateUrl').value) analyzeDocumentTemplateTags();
+      // =======================================================
+      // ✅ FIXED NAV GUARD FOR STEP 3 (MAP TAGS)
+      // =======================================================
+      if (step === 3 && document.getElementById('docTemplateUrl').value) {
+        if (isEditMode && pendingTagMappings && Object.keys(pendingTagMappings).length > 0) {
+          debug("Nav Guard: Valid mappings found in edit mode. Rendering table directly from local memory.");
+          
+          var savedTags = Object.keys(pendingTagMappings);
+          tagsDetected = true;
+          
+          // Draw rows using spreadsheet column headers cache
+          buildMappingTableLayout(savedTags, userColumnsCache);
+          
+          // Match class precisely to '.tag-mapper-dropdown'
+          var selectElements = document.querySelectorAll('.tag-mapper-dropdown');
+          selectElements.forEach(function(select) {
+            var docTag = select.getAttribute('data-tag');
+            if (pendingTagMappings[docTag]) {
+              select.value = pendingTagMappings[docTag];
+            }
+          });
+          
+          if (typeof updateMismatchWarning === 'function') {
+            updateMismatchWarning();
+          }
+        } else {
+          // Run the normal fresh analyzer only if creating a new template
+          analyzeDocumentTemplateTags();
+        }
+      }
 
       var saveBtn = document.getElementById('saveBtn');
       if (saveBtn) {
@@ -1153,6 +1213,7 @@
       if (panel && panel.getAttribute('data-visible') === 'false') {
         return true;
       }
+
       if (targetStep === 1) {
         var nameInput = document.getElementById('templateName');
         var templateName = nameInput ? nameInput.value.trim() : "";
@@ -1178,18 +1239,36 @@
         }
         if (errLabel) errLabel.style.display = 'none';
       }
+
       if (targetStep === 2) {
         var urlInput = document.getElementById('docTemplateUrl');
         if (urlInput && !urlInput.value) { alert("Please select a document template"); return false; }
       }
-      if (targetStep === 3 && (!tagsDetected || hasMismatch)) {
-        alert("Please map all tags to spreadsheet columns before proceeding");
-        return false;
+
+      // 👇 UPDATED STEP 3: Force a live check of manual choices before validation
+      if (targetStep === 3) {
+        // 1. Force the UI warning engine to look at the current dropdown choices live
+        if (typeof updateMismatchWarning === 'function') {
+          updateMismatchWarning();
+        }
+
+        // 2. Synchronize your front-end cache data immediately
+        if (typeof getTagMappings === 'function') {
+          pendingTagMappings = getTagMappings();
+        }
+
+        // 3. Evaluate the fresh results
+        if (!tagsDetected || hasMismatch) {
+          alert("⚠️ Please map all tags to spreadsheet columns before proceeding.");
+          return false;
+        }
       }
+
       if (targetStep === 6 && (selectedType === "PDF_ONLY" || selectedType === "BOTH")) {
         var destInput = document.getElementById('targetFolderInput');
         if (destInput && !destInput.value.trim()) { alert("Please select a destination folder"); return false; }
       }
+
       if (targetStep === 7 && (selectedType === "EMAIL_ONLY" || selectedType === "BOTH")) {
         var subInput = document.getElementById('emailSubject');
         var bodyCanvas = document.getElementById('emailBodyCanvas');
@@ -1198,6 +1277,7 @@
         if (!subject) { alert("Please enter an email subject"); return false; }
         if (!body || body === "<br>") { alert("Please enter an email body"); return false; }
       }
+
       if (targetStep === 8) {
         var operatorValue = document.getElementById('mergeConditionOperator')?.value;
         if (operatorValue === "CONTAINS") {
@@ -1212,6 +1292,7 @@
         var condErrClean = document.getElementById('condValueMissingError');
         if (condErrClean) condErrClean.style.display = 'none';
       }
+
       return true;
     }
   </script>
@@ -1243,8 +1324,14 @@
           saveBtn.innerText = originalText;
           saveBtn.disabled = false;
         }
-        if (google.script.run.SIGNAL_SIDEBAR_REFRESH) {
-          google.script.run.SIGNAL_SIDEBAR_REFRESH();
+        // 👇 STRATEGY FIX: Only trigger global refresh if it's the very first save instance
+        // Subsequent interim step saves will update database states silently.
+        var isFirstSave = (!editingTemplateId);
+
+        if (isFirstSave) {
+          if (google.script.run.SIGNAL_SIDEBAR_REFRESH) {
+            google.script.run.SIGNAL_SIDEBAR_REFRESH();
+          }
         }
         var stepNum = getDisplayStepNumber(currentStepIndex);
         showToast("✅ Settings Saved for Step No. " + stepNum);
@@ -1307,7 +1394,8 @@
             alert("❌ Error saving configurations: " + err.message);
           }
         })
-        .SAVE_TEMPLATE_WITH_SCHEDULE(template, "MANUAL", null, false);
+
+        .SAVE_TEMPLATE_WITH_SCHEDULE(template, "MANUAL", false);
     }
 
     // =======================================================
@@ -1462,30 +1550,350 @@
     }
 
     function analyzeDocumentTemplateTags() {
-      var url = document.getElementById('docTemplateUrl').value;
-      var tbody = document.getElementById('tagMappingBody');
-      if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Scanning tags...</td></tr>';
+  var url = document.getElementById('docTemplateUrl').value;
+  var tbody = document.getElementById('tagMappingBody');
+  if (!tbody) return;
+  
+  // ✅ CHECK FOR SAVED MAPPINGS FIRST - SKIP RE-ANALYSIS
+  if (isEditMode && pendingTagMappings && Object.keys(pendingTagMappings).length > 0) {
+    debug("✅ Using saved mappings, skipping re-analysis");
+    
+    // Just re-render the table with saved data
+    var savedTags = Object.keys(pendingTagMappings);
+    tagsDetected = true;
+    
+    // Clear and rebuild table
+    tbody.innerHTML = "";
+    
+    savedTags.forEach(function(tag) {
+      var tr = document.createElement('tr');
+      var tdDoc = document.createElement('td');
+      tdDoc.innerText = "{" + tag + "}";
+      tdDoc.style.fontWeight = "bold";
 
-      document.getElementById('matchSuccessBox').style.display = 'none';
-      document.getElementById('mismatchWarning').style.display = 'none';
-      var badge = document.getElementById('mappingStatusBadge');
-      if (badge) badge.style.display = 'none';
+      var tdSheet = document.createElement('td');
+      var select = document.createElement('select');
+      select.className = "tag-mapper-dropdown";
+      select.style.width = "100%";
+      select.setAttribute('data-doc-tag', tag);
 
-      google.script.run
-        .withSuccessHandler(function (tags) {
-          tbody.innerHTML = "";
-          if (!tags || tags.length === 0) {
-            tagsDetected = false;
-            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#d93025;">No tags found</td></tr>';
-            document.getElementById('noTagsWarning').style.display = 'block';
-            return;
+      var blank = document.createElement('option');
+      blank.value = "";
+      blank.innerText = "-- Select Column --";
+      select.appendChild(blank);
+
+      // Get saved mapping for this tag
+      var manualSavedValue = pendingTagMappings[tag] || null;
+
+      userColumnsCache.forEach(function(h) {
+        var opt = document.createElement('option');
+        opt.value = h;
+        opt.innerText = h;
+        if (manualSavedValue && manualSavedValue === h) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+
+      if (!select.value) {
+        blank.selected = true;
+      }
+
+      // Apply UI colors
+      if (select.value !== "") {
+        tr.style.backgroundColor = '#e6f4ea';
+        tr.style.borderLeft = '3px solid #137333';
+        select.style.borderColor = '#137333';
+
+        var checkNode = document.createElement('span');
+        checkNode.className = "checkmark";
+        checkNode.style.color = "#137333";
+        checkNode.innerText = " ✅";
+        tdDoc.appendChild(checkNode);
+      } else {
+        tr.style.backgroundColor = '#fce8e6';
+        tr.style.borderLeft = '3px solid #d93025';
+        select.style.borderColor = '#d93025';
+
+        var warnNode = document.createElement('span');
+        warnNode.className = "mismatch-span";
+        warnNode.style.color = "#d93025";
+        warnNode.innerText = " ⚠️ ! (Map Manually)";
+        tdDoc.appendChild(warnNode);
+      }
+
+      // Change event listener
+      select.addEventListener('change', function() {
+        var parentRow = this.closest('tr');
+        var td = parentRow.querySelector('td:first-child');
+
+        var existingSpan = td.querySelector('.mismatch-span');
+        if (existingSpan) existingSpan.remove();
+        var existingCheck = td.querySelector('.checkmark');
+        if (existingCheck) existingCheck.remove();
+
+        if (this.value !== "") {
+          parentRow.style.backgroundColor = '#e6f4ea';
+          parentRow.style.borderLeft = '3px solid #137333';
+          this.style.borderColor = '#137333';
+
+          var appendCheck = document.createElement('span');
+          appendCheck.className = "checkmark";
+          appendCheck.style.color = "#137333";
+          appendCheck.innerText = " ✅";
+          td.appendChild(appendCheck);
+        } else {
+          parentRow.style.backgroundColor = '#fce8e6';
+          parentRow.style.borderLeft = '3px solid #d93025';
+          this.style.borderColor = '#d93025';
+
+          var appendWarn = document.createElement('span');
+          appendWarn.className = "mismatch-span";
+          appendWarn.style.color = "#d93025";
+          appendWarn.innerText = " ⚠️ ! (Map Manually)";
+          td.appendChild(appendWarn);
+        }
+
+        if (typeof updateMismatchWarning === 'function') {
+          updateMismatchWarning();
+        }
+      });
+
+      tdSheet.appendChild(select);
+      tr.appendChild(tdDoc);
+      tr.appendChild(tdSheet);
+      tbody.appendChild(tr);
+    });
+
+    // Update the status
+    if (typeof updateMismatchWarning === 'function') {
+      updateMismatchWarning();
+    }
+    
+    // Hide scanning message and show success
+    document.getElementById('matchSuccessBox').style.display = 'none';
+    document.getElementById('mismatchWarning').style.display = 'none';
+    var badge = document.getElementById('mappingStatusBadge');
+    if (badge) {
+      badge.style.display = 'inline-block';
+      badge.className = 'status-badge success';
+      badge.textContent = '✅ ' + Object.keys(pendingTagMappings).length + '/' + Object.keys(pendingTagMappings).length + ' Mapped';
+    }
+    
+    return; // ⭐ EXIT - Don't call server
+  }
+  
+  // ==============================================
+  // ORIGINAL CODE CONTINUES FOR NEW TEMPLATES
+  // ==============================================
+  tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Scanning tags...</td></tr>';
+
+  document.getElementById('matchSuccessBox').style.display = 'none';
+  document.getElementById('mismatchWarning').style.display = 'none';
+  var badge = document.getElementById('mappingStatusBadge');
+  if (badge) badge.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(tags) {
+      tbody.innerHTML = "";
+      if (!tags || tags.length === 0) {
+        tagsDetected = false;
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#d93025;">No tags found</td></tr>';
+        if (document.getElementById('noTagsWarning')) {
+          document.getElementById('noTagsWarning').style.display = 'block';
+        }
+        return;
+      }
+
+      tagsDetected = true;
+      hasMismatch = false;
+
+      var savedMappings = pendingTagMappings || {};
+
+      tags.forEach(function(tag) {
+        var tr = document.createElement('tr');
+        var tdDoc = document.createElement('td');
+        tdDoc.innerText = "{" + tag + "}";
+        tdDoc.style.fontWeight = "bold";
+
+        var tdSheet = document.createElement('td');
+        var select = document.createElement('select');
+        select.className = "tag-mapper-dropdown";
+        select.style.width = "100%";
+        select.setAttribute('data-doc-tag', tag);
+
+        var blank = document.createElement('option');
+        blank.value = "";
+        blank.innerText = "-- Select Column --";
+        select.appendChild(blank);
+
+        var manualSavedValue = savedMappings[tag] || null;
+
+        userColumnsCache.forEach(function(h) {
+          var opt = document.createElement('option');
+          opt.value = h;
+          opt.innerText = h;
+          if (manualSavedValue && manualSavedValue === h) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+
+        if (!select.value) {
+          blank.selected = true;
+        }
+
+        if (select.value !== "") {
+          tr.style.backgroundColor = '#e6f4ea';
+          tr.style.borderLeft = '3px solid #137333';
+          select.style.borderColor = '#137333';
+
+          var checkNode = document.createElement('span');
+          checkNode.className = "checkmark";
+          checkNode.style.color = "#137333";
+          checkNode.innerText = " ✅";
+          tdDoc.appendChild(checkNode);
+        } else {
+          tr.style.backgroundColor = '#fce8e6';
+          tr.style.borderLeft = '3px solid #d93025';
+          select.style.borderColor = '#d93025';
+
+          var warnNode = document.createElement('span');
+          warnNode.className = "mismatch-span";
+          warnNode.style.color = "#d93025";
+          warnNode.innerText = " ⚠️ ! (Map Manually)";
+          tdDoc.appendChild(warnNode);
+        }
+
+        select.addEventListener('change', function() {
+          var parentRow = this.closest('tr');
+          var td = parentRow.querySelector('td:first-child');
+
+          var existingSpan = td.querySelector('.mismatch-span');
+          if (existingSpan) existingSpan.remove();
+          var existingCheck = td.querySelector('.checkmark');
+          if (existingCheck) existingCheck.remove();
+
+          if (this.value !== "") {
+            parentRow.style.backgroundColor = '#e6f4ea';
+            parentRow.style.borderLeft = '3px solid #137333';
+            this.style.borderColor = '#137333';
+
+            var appendCheck = document.createElement('span');
+            appendCheck.className = "checkmark";
+            appendCheck.style.color = "#137333";
+            appendCheck.innerText = " ✅";
+            td.appendChild(appendCheck);
+          } else {
+            parentRow.style.backgroundColor = '#fce8e6';
+            parentRow.style.borderLeft = '3px solid #d93025';
+            this.style.borderColor = '#d93025';
+
+            var appendWarn = document.createElement('span');
+            appendWarn.className = "mismatch-span";
+            appendWarn.style.color = "#d93025";
+            appendWarn.innerText = " ⚠️ ! (Map Manually)";
+            td.appendChild(appendWarn);
           }
 
-          tagsDetected = true;
-          hasMismatch = false;
+          if (typeof updateMismatchWarning === 'function') {
+            updateMismatchWarning();
+          }
+        });
 
-          tags.forEach(function (tag) {
+        tdSheet.appendChild(select);
+        tr.appendChild(tdDoc);
+        tr.appendChild(tdSheet);
+        tbody.appendChild(tr);
+      });
+
+      autoMatchTags();
+
+      if (typeof updateMismatchWarning === 'function') {
+        updateMismatchWarning();
+      }
+    })
+    .EXTRACT_TEMPLATE_TAGS_STREAM(url);
+}
+  </script>
+
+  <!-- ==========================================
+       BLOCK: SCRIPTS - LOAD EXISTING TEMPLATE
+       ========================================== -->
+  <script>
+    function loadExistingTemplateData(existing) {
+  if (!existing) {
+    debug("loadExistingTemplateData called but 'existing' object is null/undefined");
+    return;
+  }
+  editingTemplateId = existing.id;
+  isEditMode = true;
+  debug("Loading existing template. ID: " + editingTemplateId + " | Name: " + existing.name);
+
+  var lockAttempts = 0;
+  var keepLockedInterval = setInterval(function() {
+    var nameInput = document.getElementById('templateName');
+    if (nameInput) {
+      nameInput.value = existing.name || '';
+      nameInput.readOnly = true;
+      nameInput.disabled = true;
+      nameInput.style.backgroundColor = "#f1f3f4";
+      nameInput.style.cursor = "not-allowed";
+    }
+    lockAttempts++;
+    if (lockAttempts > 20) clearInterval(keepLockedInterval);
+  }, 100);
+
+  selectTemplateType(existing.type || 'PDF_ONLY');
+
+  if (existing.config) {
+    if (existing.config.templateUrl) {
+      document.getElementById('docTemplateUrl').value = existing.config.templateUrl;
+      document.getElementById('fileSelectionMetaDisplay').innerHTML = "✅ Template loaded";
+    }
+    if (existing.config.format) {
+      var formatRadio = document.getElementById(existing.config.format === "PDF" ? 'fmtPdf' : 'fmtDoc');
+      if (formatRadio) formatRadio.checked = true;
+    }
+    if (existing.config.namePattern) document.getElementById('fileNamePattern').value = existing.config.namePattern;
+    if (existing.config.condField) document.getElementById('mergeConditionField').value = existing.config.condField;
+    if (existing.config.condOperator) {
+      document.getElementById('mergeConditionOperator').value = existing.config.condOperator;
+      toggleConditionValue();
+    }
+    if (existing.config.condValue) document.getElementById('mergeConditionValue').value = existing.config.condValue;
+    if (existing.config.folderDestination) document.getElementById('targetFolderInput').value = existing.config.folderDestination;
+
+    if (existing.config.tagMappings) {
+      pendingTagMappings = existing.config.tagMappings;
+    } else {
+      pendingTagMappings = {};
+    }
+  }
+
+  if (existing.emailConfig) {
+    document.getElementById('emailReplyTo').value = existing.emailConfig.replyTo || '';
+    document.getElementById('emailCc').value = existing.emailConfig.cc || '';
+    document.getElementById('emailBcc').value = existing.emailConfig.bcc || '';
+    document.getElementById('emailSubject').value = existing.emailConfig.subject || '';
+    document.getElementById('emailBodyCanvas').innerHTML = existing.emailConfig.body || '';
+    activeDriveLinksCache = existing.emailConfig.driveAttachments || [];
+    activeLocalFilesCache = existing.emailConfig.localAttachments || [];
+    renderAttachments();
+  }
+
+  // ✅ RENDER SAVED MAPPINGS IMMEDIATELY - NO SERVER CALL
+  function renderSavedMappingsWhenHeadersReady() {
+    if (window.userColumnsCache && window.userColumnsCache.length > 0) {
+      if (existing.config && existing.config.tagMappings && Object.keys(existing.config.tagMappings).length > 0) {
+        var savedTags = Object.keys(existing.config.tagMappings);
+        tagsDetected = true;
+        var tbody = document.getElementById('tagMappingBody');
+        
+        if (tbody) {
+          tbody.innerHTML = "";
+          
+          savedTags.forEach(function(tag) {
             var tr = document.createElement('tr');
             var tdDoc = document.createElement('td');
             tdDoc.innerText = "{" + tag + "}";
@@ -1500,43 +1908,81 @@
             var blank = document.createElement('option');
             blank.value = "";
             blank.innerText = "-- Select Column --";
-            blank.selected = true;
             select.appendChild(blank);
 
-            userColumnsCache.forEach(function (h) {
+            var manualSavedValue = pendingTagMappings[tag] || null;
+
+            window.userColumnsCache.forEach(function(h) {
               var opt = document.createElement('option');
               opt.value = h;
               opt.innerText = h;
+              if (manualSavedValue && manualSavedValue === h) {
+                opt.selected = true;
+              }
               select.appendChild(opt);
             });
 
-            select.addEventListener('change', function () {
+            if (!select.value) {
+              blank.selected = true;
+            }
+
+            // Apply UI colors
+            if (select.value !== "") {
+              tr.style.backgroundColor = '#e6f4ea';
+              tr.style.borderLeft = '3px solid #137333';
+              select.style.borderColor = '#137333';
+
+              var checkNode = document.createElement('span');
+              checkNode.className = "checkmark";
+              checkNode.style.color = "#137333";
+              checkNode.innerText = " ✅";
+              tdDoc.appendChild(checkNode);
+            } else {
+              tr.style.backgroundColor = '#fce8e6';
+              tr.style.borderLeft = '3px solid #d93025';
+              select.style.borderColor = '#d93025';
+
+              var warnNode = document.createElement('span');
+              warnNode.className = "mismatch-span";
+              warnNode.style.color = "#d93025";
+              warnNode.innerText = " ⚠️ ! (Map Manually)";
+              tdDoc.appendChild(warnNode);
+            }
+
+            select.addEventListener('change', function() {
               var parentRow = this.closest('tr');
               var td = parentRow.querySelector('td:first-child');
 
-              // Remove existing indicators
               var existingSpan = td.querySelector('.mismatch-span');
               if (existingSpan) existingSpan.remove();
               var existingCheck = td.querySelector('.checkmark');
               if (existingCheck) existingCheck.remove();
 
               if (this.value !== "") {
-                // Mapped - Green
                 parentRow.style.backgroundColor = '#e6f4ea';
                 parentRow.style.borderLeft = '3px solid #137333';
                 this.style.borderColor = '#137333';
-                td.innerHTML = td.innerHTML.split(' <span')[0];
-                td.innerHTML += ' <span style="color:#137333;" class="checkmark">✅</span>';
+
+                var appendCheck = document.createElement('span');
+                appendCheck.className = "checkmark";
+                appendCheck.style.color = "#137333";
+                appendCheck.innerText = " ✅";
+                td.appendChild(appendCheck);
               } else {
-                // Unmapped - Red
                 parentRow.style.backgroundColor = '#fce8e6';
                 parentRow.style.borderLeft = '3px solid #d93025';
                 this.style.borderColor = '#d93025';
-                td.innerHTML = td.innerHTML.split(' <span')[0];
-                td.innerHTML += ' <span class="mismatch-span">⚠️ ! (Map Manually)</span>';
+
+                var appendWarn = document.createElement('span');
+                appendWarn.className = "mismatch-span";
+                appendWarn.style.color = "#d93025";
+                appendWarn.innerText = " ⚠️ ! (Map Manually)";
+                td.appendChild(appendWarn);
               }
 
-              updateMismatchWarning();
+              if (typeof updateMismatchWarning === 'function') {
+                updateMismatchWarning();
+              }
             });
 
             tdSheet.appendChild(select);
@@ -1545,75 +1991,27 @@
             tbody.appendChild(tr);
           });
 
-          // =======================================================
-          // AUTO-MATCH RUNS AUTOMATICALLY
-          // =======================================================
-          autoMatchTags();
-        })
-        .EXTRACT_TEMPLATE_TAGS_STREAM(url);
+          // Update the status
+          if (typeof updateMismatchWarning === 'function') {
+            updateMismatchWarning();
+          }
+          
+          var badge = document.getElementById('mappingStatusBadge');
+          if (badge) {
+            badge.style.display = 'inline-block';
+            badge.className = 'status-badge success';
+            badge.textContent = '✅ ' + Object.keys(pendingTagMappings).length + '/' + Object.keys(pendingTagMappings).length + ' Mapped';
+          }
+        }
+      }
+    } else {
+      setTimeout(renderSavedMappingsWhenHeadersReady, 100);
     }
-  </script>
+  }
 
-  <!-- ==========================================
-       BLOCK: SCRIPTS - LOAD EXISTING TEMPLATE
-       ========================================== -->
-  <script>
-    function loadExistingTemplateData(existing) {
-      if (!existing) {
-        debug("loadExistingTemplateData called but 'existing' object is null/undefined");
-        return;
-      }
-      editingTemplateId = existing.id;
-      isEditMode = true;
-      debug("Loading existing template. ID: " + editingTemplateId + " | Name: " + existing.name);
+  renderSavedMappingsWhenHeadersReady();
+}
 
-      var lockAttempts = 0;
-      var keepLockedInterval = setInterval(function () {
-        var nameInput = document.getElementById('templateName');
-        if (nameInput) {
-          nameInput.value = existing.name || '';
-          nameInput.readOnly = true;
-          nameInput.disabled = true;
-          nameInput.style.backgroundColor = "#f1f3f4";
-          nameInput.style.cursor = "not-allowed";
-        }
-        lockAttempts++;
-        if (lockAttempts > 20) clearInterval(keepLockedInterval);
-      }, 100);
-
-      selectTemplateType(existing.type || 'PDF_ONLY');
-
-      if (existing.config) {
-        if (existing.config.templateUrl) {
-          document.getElementById('docTemplateUrl').value = existing.config.templateUrl;
-          document.getElementById('fileSelectionMetaDisplay').innerHTML = "✅ Template loaded";
-        }
-        if (existing.config.format) {
-          var formatRadio = document.getElementById(existing.config.format === "PDF" ? 'fmtPdf' : 'fmtDoc');
-          if (formatRadio) formatRadio.checked = true;
-        }
-        if (existing.config.namePattern) document.getElementById('fileNamePattern').value = existing.config.namePattern;
-        if (existing.config.condField) document.getElementById('mergeConditionField').value = existing.config.condField;
-        if (existing.config.condOperator) {
-          document.getElementById('mergeConditionOperator').value = existing.config.condOperator;
-          toggleConditionValue();
-        }
-        if (existing.config.condValue) document.getElementById('mergeConditionValue').value = existing.config.condValue;
-        if (existing.config.folderDestination) document.getElementById('targetFolderInput').value = existing.config.folderDestination;
-        if (existing.config.tagMappings) pendingTagMappings = existing.config.tagMappings;
-      }
-
-      if (existing.emailConfig) {
-        document.getElementById('emailReplyTo').value = existing.emailConfig.replyTo || '';
-        document.getElementById('emailCc').value = existing.emailConfig.cc || '';
-        document.getElementById('emailBcc').value = existing.emailConfig.bcc || '';
-        document.getElementById('emailSubject').value = existing.emailConfig.subject || '';
-        document.getElementById('emailBodyCanvas').innerHTML = existing.emailConfig.body || '';
-        activeDriveLinksCache = existing.emailConfig.driveAttachments || [];
-        activeLocalFilesCache = existing.emailConfig.localAttachments || [];
-        renderAttachments();
-      }
-    }
   </script>
 
   <!-- ==========================================
@@ -1700,19 +2098,66 @@
           });
         }
 
+        // ============================================================================
+        // ✅ CRITICAL PROTECTION FOR PAGE REFRESH & EDIT MODES
+        // ============================================================================
         if (!existingTemplateIdFromServer || existingTemplateIdFromServer === 'null') {
           selectTemplateType(selectedType);
+        } else {
+          // Nesting this inside the payload success block ensures userColumnsCache is alive
+          if (!initialLoadCompleted) {
+            initialLoadCompleted = true;
+
+            google.script.run.withSuccessHandler(function (data) {
+              // 1. Fully load and map data properties into form fields
+              loadExistingTemplateData(data);
+
+              // 2. CHECK IF MAPPINGS ALREADY EXIST -> DO NOT ANALYZE AGAIN
+              if (data && data.config && data.config.tagMappings && Object.keys(data.config.tagMappings).length > 0) {
+                debug("Saved tag mappings found. Skipping active background re-analysis loop.");
+
+                // Get the tags directly from your saved mapping dictionary keys
+                var savedTags = Object.keys(data.config.tagMappings);
+                tagsDetected = true;
+
+                // Direct draw layout without calling the server stream!
+                buildMappingTableLayout(savedTags, userColumnsCache);
+
+                // Force dropdown elements to match your saved sheet columns
+                var selectElements = document.querySelectorAll('.tag-mapper-select');
+                selectElements.forEach(function (select) {
+                  var docTag = select.getAttribute('data-tag');
+                  if (pendingTagMappings[docTag]) {
+                    select.value = pendingTagMappings[docTag];
+                  }
+                });
+
+                // Immediately turn the rows green and clear the error warnings
+                if (typeof updateMismatchWarning === 'function') {
+                  updateMismatchWarning();
+                }
+
+              } else if (data && data.config && data.config.templateUrl) {
+                // Fallback: If it's a legacy template with NO tag mappings saved yet, analyze it once
+                debug("No saved mappings found. Executing fallback analysis stream.");
+                detectAndAnalyzeTemplateTags(function () {
+                  var selectElements = document.querySelectorAll('.tag-mapper-select');
+                  selectElements.forEach(function (select) {
+                    var docTag = select.getAttribute('data-tag');
+                    if (pendingTagMappings[docTag]) {
+                      select.value = pendingTagMappings[docTag];
+                    }
+                  });
+                  if (typeof updateMismatchWarning === 'function') {
+                    updateMismatchWarning();
+                  }
+                });
+              }
+
+            }).GET_TEMPLATE_BY_ID_FOR_EDIT(existingTemplateIdFromServer);
+          }
         }
       }).GET_WIZARD_INITIALIZATION_PAYLOAD();
-
-      if (existingTemplateIdFromServer && existingTemplateIdFromServer !== 'null') {
-        if (!initialLoadCompleted) {
-          initialLoadCompleted = true;
-          google.script.run.withSuccessHandler(function (data) {
-            loadExistingTemplateData(data);
-          }).GET_TEMPLATE_BY_ID_FOR_EDIT(existingTemplateIdFromServer);
-        }
-      }
     };
   </script>
 </body>

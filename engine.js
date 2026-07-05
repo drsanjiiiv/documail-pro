@@ -69,7 +69,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
     var templateId = payload.templateUrl.split("/d/")[1].split("/")[0];
     var templateFile = DriveApp.getFileById(templateId);
 
-    // Get destination folder (SAFE VERSION)
+    // Get destination folder
     var destinationFolder = DriveApp.getRootFolder();
     if (payload.folderDestination && payload.folderDestination !== "") {
       try {
@@ -107,17 +107,15 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
 
       if (!isTargetEligible) continue;
 
+      // Check if PDF already exists (Strict skip for BOTH Preview and Live Runs)
+      var existingStatus = String(rowData[docStatusColIdx] || "").trim();
+      if (existingStatus === "Success") {
+        skippedCount++;
+        continue; // Immediately drop out and evaluate the next row
+      }
+
       // For preview mode, only process one row
       if (payload.isPreview && processedCount >= 1) break;
-
-      // Check if PDF already exists (skip if already generated)
-      if (!payload.isPreview) {
-        var existingStatus = String(rowData[docStatusColIdx] || "").trim();
-        if (existingStatus === "Success") {
-          skippedCount++;
-          continue;
-        }
-      }
 
       // Create filename from pattern
       var fileName = payload.namePattern || "Generated Document";
@@ -142,6 +140,29 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
       // Open and replace tags
       var newDoc = DocumentApp.openById(newDocId);
       var body = newDoc.getBody();
+
+      // ======================================================================
+      // 🔥 INJECTION: PROCESS CONDITIONALS BEFORE SWAPPING RAW TAGS
+      // ======================================================================
+      if (typeof processConditionalBlocks === 'function') {
+        var rowDataMap = {};
+        for (var h = 0; h < allHeaders.length; h++) {
+          rowDataMap[allHeaders[h]] = rowData[h];
+        }
+
+        // STEP 1: Process table rows FIRST (before body.setText destroys them)
+        if (typeof processConditionalTableRows === 'function') {
+          Logger.log("📋 Processing table rows first...");
+          processConditionalTableRows(body, rowDataMap);
+        } else {
+          Logger.log("⚠️ processConditionalTableRows NOT found!");
+        }
+
+        // STEP 2: Process paragraph blocks (this will use body.setText)
+        Logger.log("📋 Processing paragraph blocks...");
+        processConditionalBlocks(body, rowDataMap);
+      }
+      // ======================================================================
 
       // Replace tags using mapped values - PRESERVE FORMATTING
       if (payload.tagMappings) {
@@ -193,10 +214,10 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
             }
           }
         }
-      }
+      }       
 
       newDoc.saveAndClose();
-
+      
       var finalFileId = newDocId;
       var finalFileUrl = newDocFile.getUrl();
 
@@ -234,41 +255,27 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
       }
     }
 
-    var mode = payload.isPreview ? "PREVIEW" : "PRODUCTION";
+    var mode = payload.isPreview ? "PREVIEW" : "RUN";
 
-    // =======================================================
-    // CLEAR NOTIFICATION MESSAGES
-    // =======================================================
-    if (skippedCount > 0 && processedCount === 0) {
-      return "⚠️ Execution Aborted\n\n" +
-        "All eligible rows already have PDFs generated.\n" +
-        "No new PDFs were created.";
+    // If something was processed, report success clean
+    if (processedCount > 0) {
+      return mode + " Completed Successfully! 🎉\n\n✅ New Documents Created: " + processedCount +
+        (skippedCount > 0 ? "\n⏭️ Skipped Completed Rows: " + skippedCount : "") +
+        "\n📂 Saved to Destination Folder: " + destinationFolder.getName();
     }
 
-    if (skippedCount > 0 && processedCount > 0) {
-      return mode + " completed! " +
-        "✅ Processed: " + processedCount + " new record(s). " +
-        "⏭️ Skipped: " + skippedCount + " existing record(s). " +
-        (payload.format === "PDF" ? "PDF files" : "Google Docs") +
-        " saved to: " + destinationFolder.getName();
+    if (skippedCount > 0 && processedCount === 0) {
+      return "NO_ROWS_ELIGIBLE";
     }
 
     if (processedCount === 0) {
       return "No eligible records found matching your filter conditions.";
     }
 
-    return mode + " completed! " +
-      "✅ Processed " + processedCount + " record(s). " +
-      (payload.format === "PDF" ? "PDF files" : "Google Docs") +
-      " saved to: " + destinationFolder.getName();
-
   } catch (err) {
     return "Error: " + err.toString();
   }
 }
-// ==========================================
-// FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE Ends
-// ==========================================
 
 // ==========================================
 // FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW Starts
@@ -278,12 +285,10 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
     return { success: false, error: "No data row provided." };
   }
   try {
-    // Get template file ID
     var templateUrl = payload.templateUrl;
     var templateId = templateUrl.split("/d/")[1].split("/")[0];
     var templateFile = DriveApp.getFileById(templateId);
 
-    // Get destination folder (with safe check)
     var destinationFolder = DriveApp.getRootFolder();
     if (payload.folderDestination && typeof payload.folderDestination === "string" && payload.folderDestination !== "") {
       try {
@@ -297,7 +302,6 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
 
     var rowData = singleRowData[0];
 
-    // Create filename from pattern
     var fileName = payload.namePattern || "Generated Document";
     for (var h = 0; h < allHeaders.length; h++) {
       var header = allHeaders[h];
@@ -313,15 +317,27 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
       fileName = "PROV-" + fileName;
     }
 
-    // Copy the template file
     var newDocFile = templateFile.makeCopy(fileName, destinationFolder);
     var newDocId = newDocFile.getId();
 
-    // Open and replace tags
     var newDoc = DocumentApp.openById(newDocId);
     var body = newDoc.getBody();
 
-    // Replace tags using mapped values - PRESERVE FORMATTING
+    // ======================================================================
+    // 🔥 INJECTION: PROCESS CONDITIONALS BEFORE SWAPPING RAW TAGS
+    // ======================================================================
+    if (typeof processConditionalBlocks === 'function') {
+      var rowDataMap = {};
+      for (var h = 0; h < allHeaders.length; h++) {
+        rowDataMap[allHeaders[h]] = rowData[h];
+      }
+      processConditionalBlocks(body, rowDataMap);
+      if (typeof processConditionalTableRows === 'function') {
+        processConditionalTableRows(body, rowDataMap);
+      }
+    }
+    // ======================================================================
+
     if (payload.tagMappings) {
       for (var docTag in payload.tagMappings) {
         if (payload.tagMappings.hasOwnProperty(docTag)) {
@@ -373,13 +389,9 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
       }
     }
 
-    // =======================================================
-    // CONVERT TO PDF (No watermark)
-    // =======================================================
     var finalFileId = newDocId;
     var finalFileUrl = newDocFile.getUrl();
 
-    // Convert to PDF if format is PDF
     if (payload.format === "PDF") {
       var pdfBlob = newDocFile.getAs('application/pdf');
       var pdfFileName = fileName + ".pdf";
@@ -389,7 +401,6 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
       finalFileUrl = pdfFile.getUrl();
     }
 
-    // Update sheet
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allSheetHeaders = GET_ALL_RAW_HEADERS();
 
@@ -414,9 +425,6 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
     return { success: false, error: err.toString() };
   }
 }
-// ==========================================
-// FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW Ends
-// ==========================================
 
 function EXTRACT_TEMPLATE_TAGS_STREAM(docUrl) {
   try {
@@ -427,7 +435,6 @@ function EXTRACT_TEMPLATE_TAGS_STREAM(docUrl) {
     var matches = [];
     var matchItem;
 
-    // Get valid headers (excludes system columns)
     var validHeaders = GET_LIVE_SHEET_HEADERS();
     var validHeaderSet = {};
     for (var i = 0; i < validHeaders.length; i++) {
@@ -446,12 +453,9 @@ function EXTRACT_TEMPLATE_TAGS_STREAM(docUrl) {
   }
 }
 
-// ==========================================
-// PREVIEW TEMPLATE FUNCTION - Shows both PDF and Email preview for BOTH type
-// ==========================================
-// ==========================================
-// PREVIEW TEMPLATE FUNCTION - Shows both PDF and Email preview for BOTH type
-// ==========================================
+// ============================================================================
+// PREVIEW TEMPLATE FUNCTION - PERFECT INTEGRATION WITH SKIP LOGIC
+// ============================================================================
 function PREVIEW_TEMPLATE(templateId) {
   try {
     var template = GET_TEMPLATE_BY_ID(templateId);
@@ -460,21 +464,13 @@ function PREVIEW_TEMPLATE(templateId) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
 
-    // =======================================================
-    // CHECK IF SHEET HAS DATA ROWS
-    // =======================================================
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
       return {
         name: template.name,
         previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 20px;">' +
-          '<h2 style="color:#c5221f;">❌ No Data Found</h2>' +
-          '<hr>' +
-          '<p>No data rows found in the sheet.</p>' +
-          '<p style="color:#5f6368;">Please add data to your sheet before previewing.</p>' +
-          '<div style="margin-top:20px; text-align:center;">' +
-          '<button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button>' +
-          '</div></div>'
+          '<h2 style="color:#c5221f;">❌ No Data Found</h2><hr><p>No data rows found in the sheet.</p>' +
+          '<div style="margin-top:20px; text-align:center;"><button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button></div></div>'
       };
     }
 
@@ -485,33 +481,78 @@ function PREVIEW_TEMPLATE(templateId) {
     }
     if (emailColIdx === -1) emailColIdx = 4;
 
+    // Find the dynamic merged doc status column
+    var docStatusColIdx = -1;
+    for (var c = 0; c < allHeaders.length; c++) {
+      if (String(allHeaders[c]).toLowerCase().indexOf("merged doc status") !== -1) {
+        docStatusColIdx = c;
+        break;
+      }
+    }
+
+    // Dynamic Tracking Column for emails
+    var emailStatusColName = "Sent Mail Status - " + template.name;
+    var emailStatusColIdx = -1;
+    for (var c = 0; c < allHeaders.length; c++) {
+      if (String(allHeaders[c]).toLowerCase().trim() === emailStatusColName.toLowerCase()) {
+        emailStatusColIdx = c;
+        break;
+      }
+    }
+
     var criteriaColIdx = allHeaders.indexOf(template.config.condField);
     if (criteriaColIdx === -1) criteriaColIdx = 0;
 
     var data = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
     var previewRow = null;
 
+    // Strict Sync Logic: Iterates over rows exactly as RUN behaves
     for (var i = 0; i < data.length; i++) {
       var evalCellText = String(data[i][criteriaColIdx] || "").trim();
-      var isMatch = false;
+      var isCriteriaMatch = false;
+
+      // 1. Evaluate general filter condition matching rules
       if (template.config.condOperator === "NOT_EMPTY" && evalCellText !== "") {
-        isMatch = true;
+        isCriteriaMatch = true;
       } else if (template.config.condOperator === "CONTAINS" && evalCellText.toLowerCase().indexOf(String(template.config.condValue).toLowerCase().trim()) !== -1) {
-        isMatch = true;
+        isCriteriaMatch = true;
       }
-      if (isMatch) {
+
+      // 2. Strict Skip Check: Bypass based on specific template types
+      if (isCriteriaMatch) {
+        if (template.type === "PDF_ONLY") {
+          if (docStatusColIdx !== -1 && String(data[i][docStatusColIdx] || "").trim() === "Success") {
+            continue;
+          }
+        } else if (template.type === "EMAIL_ONLY") {
+          if (emailStatusColIdx !== -1 && String(data[i][emailStatusColIdx] || "").trim() !== "") {
+            continue;
+          }
+        } else if (template.type === "BOTH") {
+          var pdfDone = (docStatusColIdx !== -1 && String(data[i][docStatusColIdx] || "").trim() === "Success");
+          var emailDone = (emailStatusColIdx !== -1 && String(data[i][emailStatusColIdx] || "").trim() !== "");
+          if (pdfDone && emailDone) {
+            continue;
+          }
+        }
+
+        // Found the proper un-processed record row match
         previewRow = data[i];
         break;
       }
     }
 
     if (!previewRow) {
-      return { name: template.name, previewHtml: "<p>No rows match your filter conditions.</p>" };
+      return {
+        name: template.name,
+        previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 20px;">' +
+          '<h2 style="color:#f2994a;">ℹ️ No Rows Eligible</h2><hr>' +
+          '<p>All rows matching your filter conditions have already been merged successfully with a status of <strong>Success / Sent</strong>.</p>' +
+          '<p>There are no fresh pending records available to preview layout results against.</p>' +
+          '<div style="margin-top:20px; text-align:center;"><button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button></div></div>'
+      };
     }
 
-    // =======================================================
-    // BUILD DISPLAY FILENAME (NO NUMBER FORMATTING)
-    // =======================================================
     var displayFileName = template.config?.namePattern || "Document";
     for (var h = 0; h < allHeaders.length; h++) {
       var header = allHeaders[h];
@@ -527,9 +568,6 @@ function PREVIEW_TEMPLATE(templateId) {
       }
     }
 
-    // =======================================================
-    // EMAIL PREVIEW WITH FORMATTED VALUES (Dates + Numbers)
-    // =======================================================
     var recipientEmail = previewRow[emailColIdx] || "example@email.com";
     var emailSubject = template.emailConfig?.subject || "";
     var emailBody = template.emailConfig?.body || "";
@@ -551,25 +589,16 @@ function PREVIEW_TEMPLATE(templateId) {
       }
     }
 
-    // =======================================================
-    // BUILD PREVIEW HTML
-    // =======================================================
     var previewHtml = '<div style="font-family: Roboto, sans-serif; padding: 20px;">';
-    previewHtml += '<h2 style="color:#1a73e8;">✅ Preview Generated Successfully!</h2>';
-    previewHtml += '<hr>';
+    previewHtml += '<h2 style="color:#1a73e8;">✅ Preview Generated Successfully!</h2><hr>';
     previewHtml += '<p><strong>📄 Template Name:</strong> ' + escapeHtml(template.name) + '</p>';
     previewHtml += '<p><strong>📋 Template Type:</strong> ' + (template.type === "PDF_ONLY" ? "PDF Only" : template.type === "EMAIL_ONLY" ? "Email Only" : "PDF & Email") + '</p>';
 
-    // =======================================================
-    // PDF SECTION
-    // =======================================================
     if (template.type === "PDF_ONLY" || template.type === "BOTH") {
-      // Try to find the generated file
       var fileUrl = '';
       var fileName = '';
       try {
         var folderId = template.config?.folderDestination;
-
         if (folderId) {
           var folderIdExtracted = folderId.split("/folders/")[1] || folderId.split("id=")[1];
           if (folderIdExtracted) {
@@ -597,7 +626,6 @@ function PREVIEW_TEMPLATE(templateId) {
           }
         }
 
-        // If not found in folder, search root Drive
         if (!fileUrl) {
           var rootFiles = DriveApp.getFiles();
           var currentTime = new Date().getTime();
@@ -630,36 +658,23 @@ function PREVIEW_TEMPLATE(templateId) {
         previewHtml += '<p style="margin:0; color:#137333;"><strong>✅ Preview File Generated!</strong></p>';
         previewHtml += '<p style="margin:5px 0;"><strong>File:</strong> ' + escapeHtml(fileName) + '</p>';
         previewHtml += '<p style="margin:5px 0;"><a href="' + fileUrl + '" target="_blank">📂 Click here to open the preview file</a></p>';
-        previewHtml += '<p style="margin:5px 0; color:#5f6368; font-size:12px;">⚠️ This file has "PREVIEW ONLY" watermark. Do not use for production.</p>';
         previewHtml += '</div>';
       } else {
-        previewHtml += '<p><em>✅ Preview file generated with PROV- prefix. Check your Google Drive folder.</em></p>';
+        previewHtml += '<p><em>`✅ Preview file generated with PROV- prefix. Check your Google Drive folder.`</em></p>';
       }
-
       previewHtml += '</div>';
     }
 
-    // =======================================================
-    // EMAIL SECTION
-    // =======================================================
     if (template.type === "EMAIL_ONLY" || template.type === "BOTH") {
       previewHtml += '<div style="background:#e6f4ea; padding:12px; border-radius:6px; margin:10px 0;">';
       previewHtml += '<h3 style="color:#137333; margin:0 0 10px 0;">✉️ Email Preview</h3>';
       previewHtml += '<p><strong>To:</strong> ' + escapeHtml(recipientEmail) + '</p>';
       previewHtml += '<p><strong>Subject:</strong> ' + escapeHtml(emailSubject) + '</p>';
-      previewHtml += '<div style="border:1px solid #dadce0; padding:12px; border-radius:6px; margin-top:12px; background:#ffffff;">';
-      previewHtml += '<strong>Email Body:</strong><br><br>' + emailBody;
-      previewHtml += '</div>';
-      previewHtml += '<p style="margin-top:12px; color:#5f6368;"><em>Note: This is a preview only. No email was sent.</em></p>';
+      previewHtml += '<div style="border:1px solid #dadce0; padding:12px; border-radius:6px; margin-top:12px; background:#ffffff;"><strong>Email Body:</strong><br><br>' + emailBody + '</div>';
       previewHtml += '</div>';
     }
 
-    previewHtml += '<hr>';
-    previewHtml += '<div style="margin-top:20px; text-align:center;">';
-    previewHtml += '<button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button>';
-    previewHtml += '</div>';
-    previewHtml += '</div>';
-
+    previewHtml += '<hr><div style="margin-top:20px; text-align:center;"><button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button></div></div>';
     return { name: template.name, previewHtml: previewHtml };
 
   } catch (e) {
@@ -671,9 +686,6 @@ function RUN_TEMPLATE(templateId) {
   var template = GET_TEMPLATE_BY_ID(templateId);
   if (!template) return "Template not found";
 
-  // =======================================================
-  // CHECK IF SHEET HAS DATA ROWS
-  // =======================================================
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
@@ -697,20 +709,33 @@ function RUN_TEMPLATE(templateId) {
     }
     if (emailColIdx === -1) emailColIdx = 4;
 
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, template.name);
+    var criteriaColIdx = allHeaders.indexOf(template.config.condField);
+    if (criteriaColIdx === -1) criteriaColIdx = 0;
 
+    var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, template.name);
     var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
     var selectedRows = [];
 
     for (var i = 0; i < data.length; i++) {
+      // 1. Evaluate custom criteria filters first
+      var evalCellText = String(data[i][criteriaColIdx] || "").trim();
+      var isMatch = false;
+      if (template.config.condOperator === "NOT_EMPTY" && evalCellText !== "") {
+        isMatch = true;
+      } else if (template.config.condOperator === "CONTAINS" && evalCellText.toLowerCase().indexOf(String(template.config.condValue).toLowerCase().trim()) !== -1) {
+        isMatch = true;
+      }
+
+      if (!isMatch) continue;
+
+      // 2. Ensure record hasn't already been processed
       var statusValue = String(data[i][statusColIdx] || "").trim();
       if (statusValue === "") {
         selectedRows.push(i + 2);
       }
     }
 
-    if (selectedRows.length === 0) return "No eligible records found for template: " + template.name;
+    if (selectedRows.length === 0) return "NO_ROWS_ELIGIBLE";
     return executeEmailSend(selectedRows, template.emailConfig, template.name);
   }
 
@@ -718,7 +743,6 @@ function RUN_TEMPLATE(templateId) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var allHeaders = GET_ALL_RAW_HEADERS();
 
-    // Find PDF status column indices
     var docStatusColIdx = -1;
     var docIdColIdx = -1;
     var docUrlColIdx = -1;
@@ -734,14 +758,11 @@ function RUN_TEMPLATE(templateId) {
     if (docIdColIdx === -1) docIdColIdx = 6;
     if (docUrlColIdx === -1) docUrlColIdx = 7;
 
-    // Find filter column
     var criteriaColIdx = allHeaders.indexOf(template.config.condField);
     if (criteriaColIdx === -1) criteriaColIdx = 0;
 
-    // Find email status column
     var emailStatusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, template.name);
 
-    // Find email recipient column
     var emailColIdx = -1;
     for (var c = 0; c < allHeaders.length; c++) {
       var hName = String(allHeaders[c]).toLowerCase().trim();
@@ -758,7 +779,6 @@ function RUN_TEMPLATE(templateId) {
     for (var i = 0; i < data.length; i++) {
       var rowNum = i + 2;
 
-      // Check filter condition
       var evalCellText = String(data[i][criteriaColIdx] || "").trim();
       var isMatch = false;
       if (template.config.condOperator === "NOT_EMPTY" && evalCellText !== "") {
@@ -769,7 +789,6 @@ function RUN_TEMPLATE(templateId) {
 
       if (!isMatch) continue;
 
-      // Check if PDF already exists
       var existingDocStatus = String(data[i][docStatusColIdx] || "").trim();
       var existingDocId = String(data[i][docIdColIdx] || "").trim();
       var existingDocUrl = String(data[i][docUrlColIdx] || "").trim();
@@ -779,17 +798,14 @@ function RUN_TEMPLATE(templateId) {
       var pdfFileUrl = null;
 
       if (existingDocStatus === "Success" && existingDocId !== "") {
-        // PDF already exists - reuse it
         pdfGenerated = true;
         pdfFileId = existingDocId;
         pdfFileUrl = existingDocUrl;
         pdfSkippedCount++;
       } else {
-        // Generate PDF
         var config = JSON.parse(JSON.stringify(template.config));
         config.isPreview = false;
 
-        // Create a single-row payload for this specific row
         var singleRowData = [data[i]];
         var result = EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(config, singleRowData, rowNum, allHeaders);
 
@@ -804,11 +820,8 @@ function RUN_TEMPLATE(templateId) {
         }
       }
 
-      // Send email with PDF attachment
       var emailStatus = String(data[i][emailStatusColIdx] || "").trim();
-      if (emailStatus !== "") {
-        continue; // Email already sent for this template
-      }
+      if (emailStatus !== "") continue;
 
       var recipient = data[i][emailColIdx];
       if (!recipient || recipient.indexOf("@") === -1) continue;
@@ -817,28 +830,27 @@ function RUN_TEMPLATE(templateId) {
       var body = template.emailConfig.body || "";
 
       for (var h = 0; h < allHeaders.length; h++) {
-    var header = allHeaders[h];
-    if (header) {
-        var val = data[i][h];
-        if (val instanceof Date) {
+        var header = allHeaders[h];
+        if (header) {
+          var val = data[i][h];
+          if (val instanceof Date) {
             val = FORMAT_DATE_FOR_DISPLAY(val);
-        } else if (typeof val === 'number') {
+          } else if (typeof val === 'number') {
             val = FORMAT_NUMBER_FOR_DISPLAY(val);
-        } else {
+          } else {
             val = String(val || "");
+          }
+          var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
+          subject = subject.replace(regex, val);
+          body = body.replace(regex, val);
         }
-        var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
-        subject = subject.replace(regex, val);
-        body = body.replace(regex, val);
-    }
-}
+      }
 
       var mailOptions = { htmlBody: body };
       if (template.emailConfig.replyTo) mailOptions.replyTo = template.emailConfig.replyTo;
       if (template.emailConfig.cc) mailOptions.cc = template.emailConfig.cc;
       if (template.emailConfig.bcc) mailOptions.bcc = template.emailConfig.bcc;
 
-      // Attach the PDF file
       if (pdfFileId) {
         try {
           var pdfFile = DriveApp.getFileById(pdfFileId);
@@ -854,7 +866,7 @@ function RUN_TEMPLATE(templateId) {
         var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
         sheet.getRange(rowNum, emailStatusColIdx + 1).setValue("Sent to " + recipient + " on " + timestamp + " (with PDF)");
         emailSentCount++;
-        CHECK_DAILY_QUOTA_ALERT(); // <-- Single line injection handles it!
+        CHECK_DAILY_QUOTA_ALERT();
       } catch (e) {
         errors.push("Row " + rowNum + ": " + e.message);
         sheet.getRange(rowNum, emailStatusColIdx + 1).setValue("Failed: " + e.message);
@@ -867,9 +879,8 @@ function RUN_TEMPLATE(templateId) {
     if (emailSentCount > 0) resultMsg += "✅ Emails sent: " + emailSentCount + "\n";
     if (errors.length > 0) resultMsg += "⚠️ Errors: " + errors.join(", ");
 
-    return resultMsg || "No eligible records found.";
+    return resultMsg || "NO_ROWS_ELIGIBLE";
   }
-
   return "Unknown template type";
 }
 
@@ -884,7 +895,6 @@ function GET_ELIGIBLE_RECORDS_FOR_TEMPLATE(params) {
   }
   if (emailColIdx === -1) emailColIdx = 4;
 
-  // Look for dynamic status column for this template
   var statusColIdx = -1;
   if (params.templateName) {
     var statusColName = "Sent Mail Status - " + params.templateName;
@@ -911,7 +921,6 @@ function GET_ELIGIBLE_RECORDS_FOR_TEMPLATE(params) {
   for (var i = 0; i < values.length; i++) {
     var rowNum = i + 2;
 
-    // Skip if already sent for this template
     var alreadySent = false;
     if (statusColIdx !== -1) {
       var existingStatus = String(values[i][statusColIdx] || "").trim();
@@ -960,6 +969,14 @@ function GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName) {
     }
   }
 
+  var docStatusColIdx = -1;
+  for (var c = 0; c < allHeaders.length; c++) {
+    if (String(allHeaders[c]).toLowerCase().indexOf("merged doc status") !== -1) {
+      docStatusColIdx = c;
+      break;
+    }
+  }
+
   var criteriaColIdx = allHeaders.indexOf(template.config.condField);
   if (criteriaColIdx === -1) criteriaColIdx = 0;
 
@@ -972,6 +989,11 @@ function GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName) {
     if (statusColIdx !== -1) {
       var existingStatus = String(data[i][statusColIdx] || "").trim();
       if (existingStatus !== "") continue;
+    }
+
+    if (docStatusColIdx !== -1) {
+      var existingDocStatus = String(data[i][docStatusColIdx] || "").trim();
+      if (existingDocStatus === "Success") continue;
     }
 
     var cell = String(data[i][criteriaColIdx] || "").trim();
@@ -1005,4 +1027,297 @@ function GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName) {
     remainingQuota: remainingQuota,
     sheetHeaders: GET_LIVE_SHEET_HEADERS()
   };
+}
+
+// ============================================================
+// 📋 CONDITIONAL PROCESSING FUNCTIONS - FIXED
+// ============================================================
+
+/**
+ * Main evaluation router - SINGLE VERSION (remove duplicates)
+ */
+function evaluateCondition(varValue, operator, targetValue) {
+  var currentVal = varValue !== undefined && varValue !== null ? String(varValue).trim() : "";
+  var criteriaVal = targetValue !== undefined && targetValue !== null ? String(targetValue).trim() : "";
+  operator = operator.toLowerCase().trim();
+
+  Logger.log("  evaluateCondition: currentVal='" + currentVal + "', operator='" + operator + "', criteriaVal='" + criteriaVal + "'");
+
+  var isNumeric = !isNaN(currentVal) && !isNaN(criteriaVal) && currentVal !== "" && criteriaVal !== "";
+
+  if (isNumeric) {
+    var numCurrent = parseFloat(currentVal);
+    var numCriteria = parseFloat(criteriaVal);
+    switch (operator) {
+      case '==': case '=': return numCurrent === numCriteria;
+      case '!=': case '<>': return numCurrent !== numCriteria;
+      case '>=': return numCurrent >= numCriteria;
+      case '<=': return numCurrent <= numCriteria;
+      case '>': return numCurrent > numCriteria;
+      case '<': return numCurrent < numCriteria;
+      case 'contains': return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
+      default: return false;
+    }
+  }
+
+  switch (operator) {
+    case '==': case '=': return currentVal.toLowerCase() === criteriaVal.toLowerCase();
+    case '!=': case '<>': return currentVal.toLowerCase() !== criteriaVal.toLowerCase();
+    case '>=': return currentVal.toLowerCase() >= criteriaVal.toLowerCase();
+    case '<=': return currentVal.toLowerCase() <= criteriaVal.toLowerCase();
+    case '>': return currentVal.toLowerCase() > criteriaVal.toLowerCase();
+    case '<': return currentVal.toLowerCase() < criteriaVal.toLowerCase();
+    case 'contains': return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
+    default: return false;
+  }
+}
+
+/**
+ * Process conditional blocks - <<If: ... >> ... <<EndIf>>
+ * FIXED: Properly handles both TRUE and FALSE conditions
+ */
+function processConditionalBlocks(body, rowDataMap) {
+  try {
+    Logger.log("🔍 processConditionalBlocks: Starting Structural Cleanup...");
+    
+    // FIRST: Replace ALL {VARIABLES} in the entire document
+    Logger.log("📋 Replacing variables...");
+    for (var key in rowDataMap) {
+      var placeholder = "{" + key + "}";
+      var replacementValue = String(rowDataMap[key] || "");
+      body.replaceText(escapeRegexString(placeholder), replacementValue);
+      Logger.log("  Replaced " + placeholder + " with '" + replacementValue + "'");
+    }
+    
+    // SECOND: Process <<If: ... >> ... <<EndIf>> blocks
+    Logger.log("📋 Processing <<If: blocks...");
+    
+    // Keep processing until no more blocks found
+    var blocksProcessed = 0;
+    var maxIterations = 50;
+    
+    while (blocksProcessed < maxIterations) {
+      // Find the first <<If: marker
+      var startRange = body.findText("<<If:");
+      if (!startRange) {
+        Logger.log("  No more <<If: blocks found");
+        break;
+      }
+      
+      var startElement = startRange.getElement();
+      var startOffset = startRange.getStartOffset();
+      var startText = startElement.asText();
+      var fullText = startText.getText();
+      
+      // Extract condition from the text
+      var conditionMatch = fullText.match(/<<If:\s*([^>]+)>>/i);
+      if (!conditionMatch) {
+        Logger.log("  Could not parse condition, removing marker");
+        startText.deleteText(startRange.getStartOffset(), startRange.getEndOffsetInclusive());
+        blocksProcessed++;
+        continue;
+      }
+      
+      var condition = conditionMatch[1].trim();
+      Logger.log("  Found block with condition: '" + condition + "'");
+      
+      // Find the matching <<EndIf>>
+      var endRange = body.findText("<<EndIf>>", startRange);
+      if (!endRange) {
+        Logger.log("  No matching <<EndIf>> found, removing marker");
+        startText.deleteText(startRange.getStartOffset(), startRange.getEndOffsetInclusive());
+        blocksProcessed++;
+        continue;
+      }
+      
+      var endElement = endRange.getElement();
+      var endOffset = endRange.getStartOffset();
+      var endText = endElement.asText();
+      
+      // Evaluate the condition
+      var conditionMet = false;
+      var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
+      var cMatch = cRegex.exec(condition);
+      
+      if (cMatch) {
+        var leftSide = cMatch[1].trim();
+        var operator = cMatch[2].trim();
+        var targetValue = cMatch[3].trim();
+        Logger.log("    Parsed: leftSide='" + leftSide + "', operator='" + operator + "', targetValue='" + targetValue + "'");
+        conditionMet = evaluateCondition(leftSide, operator, targetValue);
+        Logger.log("    Result: " + conditionMet);
+      } else {
+        // Try simple equality
+        var eqIndex = condition.indexOf("==");
+        if (eqIndex !== -1) {
+          var leftPart = condition.substring(0, eqIndex).trim();
+          var rightPart = condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
+          conditionMet = (String(leftPart).trim() === String(rightPart).trim());
+          Logger.log("    Simple result: " + conditionMet);
+        }
+      }
+      
+      if (conditionMet) {
+
+  Logger.log("    ✅ TRUE - Keeping content, removing markers");
+
+  // -------------------------
+  // Remove <<If: ...>>
+  // -------------------------
+  var startMarker = fullText.match(/<<If:\s*[^>]+>>/)[0];
+
+  startText.deleteText(
+    startRange.getStartOffset(),
+    startRange.getStartOffset() + startMarker.length - 1
+  );
+
+  // If the paragraph now contains nothing, delete the paragraph
+  if (startText.getText().trim() === "") {
+    startElement.getParent().removeFromParent();
+  }
+
+  // -------------------------
+  // Remove <<EndIf>>
+  // -------------------------
+
+  // Re-find EndIf because document structure may have changed
+  endRange = body.findText("<<EndIf>>");
+
+  if (endRange) {
+
+    endElement = endRange.getElement();
+    endText = endElement.asText();
+
+    endText.deleteText(
+      endRange.getStartOffset(),
+      endRange.getEndOffsetInclusive()
+    );
+
+    // If EndIf paragraph is now empty, delete it
+    if (endText.getText().trim() === "") {
+      endElement.getParent().removeFromParent();
+    }
+  }
+
+}
+      
+      blocksProcessed++;
+    }
+    
+    Logger.log("✅ processConditionalBlocks: Completed, processed " + blocksProcessed + " blocks");
+    
+  } catch (err) {
+    Logger.log("❌ Error in processConditionalBlocks: " + err.toString());
+  }
+}
+
+/**
+ * Process conditional table rows - <<RowIf: ... >> 
+ * FIXED: Properly handles both TRUE and FALSE conditions in tables
+ */
+function processConditionalTableRows(body, rowDataMap) {
+  try {
+    Logger.log("🔍 processConditionalTableRows: Starting safe table processing");
+    var tables = body.getTables();
+    
+    if (tables.length === 0) {
+      Logger.log("  No tables found, skipping");
+      return;
+    }
+    
+    Logger.log("📋 Found " + tables.length + " tables");
+    
+    for (var t = 0; t < tables.length; t++) {
+      var table = tables[t];
+      Logger.log("  Table " + (t + 1));
+      
+      // Step 1: Replace variables in table cells
+      Logger.log("    Replacing variables in table cells...");
+      for (var key in rowDataMap) {
+        var placeholder = "{" + key + "}";
+        var replacementValue = String(rowDataMap[key] || "");
+        table.replaceText(escapeRegexString(placeholder), replacementValue);
+      }
+      
+      // Step 2: Row-level condition logic
+      var rowsToRemove = [];
+      var numRows = table.getNumRows();
+      Logger.log("    Table has " + numRows + " rows");
+      
+      for (var r = 0; r < numRows; r++) {
+        var row = table.getRow(r);
+        var rowText = row.getText();
+        Logger.log("    Row " + (r + 1) + " text: " + rowText);
+        
+        var match = rowText.match(/<<RowIf:\s*([^>]+)>>/i);
+        
+        if (match) {
+          var condition = match[1].trim();
+          Logger.log("    Row " + (r + 1) + " has condition: '" + condition + "'");
+          
+          var conditionMet = false;
+          var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
+          var cMatch = cRegex.exec(condition);
+          
+          if (cMatch) {
+            var leftSide = cMatch[1].trim();
+            var operator = cMatch[2].trim();
+            var targetValue = cMatch[3].trim();
+            Logger.log("      Parsed: leftSide='" + leftSide + "', operator='" + operator + "', targetValue='" + targetValue + "'");
+            conditionMet = evaluateCondition(leftSide, operator, targetValue);
+            Logger.log("      Result: " + conditionMet);
+          } else {
+            // Try simple equality
+            var eqIndex = condition.indexOf("==");
+            if (eqIndex !== -1) {
+              var leftPart = condition.substring(0, eqIndex).trim();
+              var rightPart = condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
+              conditionMet = (String(leftPart).trim() === String(rightPart).trim());
+              Logger.log("      Simple result: " + conditionMet);
+            }
+          }
+          
+          if (!conditionMet) {
+            // FALSE: Remove the entire row
+            rowsToRemove.push(r);
+            Logger.log("    Row " + (r + 1) + " marked for REMOVAL (condition FALSE)");
+          } else {
+            // TRUE: Remove the <<RowIf: ... >> tag from all cells
+            Logger.log("    Row " + (r + 1) + " marked to KEEP - removing tag");
+            var numCells = row.getNumCells();
+            for (var c = 0; c < numCells; c++) {
+              var cell = row.getCell(c);
+              var cellText = cell.getText();
+              var cleanedText = cellText.replace(/<<RowIf:\s*[^>]+>>/i, '').trim();
+              if (cleanedText !== cellText) {
+                cell.setText(cleanedText);
+                Logger.log("      Removed tag from cell " + (c + 1));
+              }
+            }
+          }
+        }
+      }
+      
+      // Remove rows from bottom to top to maintain index integrity
+      rowsToRemove.sort(function(a, b) { return b - a; });
+      for (var i = 0; i < rowsToRemove.length; i++) {
+        table.removeRow(rowsToRemove[i]);
+        Logger.log("  Removed row " + (rowsToRemove[i] + 1));
+      }
+    }
+    
+    Logger.log("✅ processConditionalTableRows: Completed");
+    
+  } catch (err) {
+    Logger.log("❌ Error in processConditionalTableRows: " + err.toString());
+  }
+}
+
+
+/**
+ * Helper to escape special regular expression characters
+ */
+function escapeRegexString(str) {
+  if (!str) return '';
+  return str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 }

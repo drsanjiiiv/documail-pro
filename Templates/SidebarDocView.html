@@ -1,166 +1,261 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <base target="_top">
-    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
-    <style>
-      body { padding: 12px; font-family: 'Roboto', sans-serif; }
-      .card { 
-        background: #f8f9fa; 
-        border: 1px solid #dadce0; 
-        border-radius: 6px; 
-        padding: 16px; 
-        margin-bottom: 20px; 
-      }
-      h3 { margin-top: 0; color: #1a73e8; font-size: 14px; font-weight: 600; }
-      .help-text { font-size: 11px; color: #5f6368; margin-bottom: 12px; line-height: 1.4; }
-      .form-group { margin-bottom: 12px; }
-      label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 11px; color: #3c4043; }
-      select, input[type="text"] { width: 100%; box-sizing: border-box; height: 30px; }
-      .radio-group { margin: 8px 0 12px 0; display: flex; gap: 15px; }
-      .radio-group label { display: inline-flex; align-items: center; font-weight: normal; cursor: pointer; }
-      .radio-group input { margin-right: 4px; }
-      button { width: 100%; margin-top: 8px; font-weight: 500; }
-      .loading { color: #5f6368; font-style: italic; font-size: 12px; text-align: center; margin-top: 20px; }
-      .hidden { display: none; }
-    </style>
-  </head>
-  <body>
 
-    <div id="loader" class="loading">Loading Sheet headers...</div>
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+  <style>
+    body {
+      padding: 12px;
+      font-family: 'Roboto', sans-serif;
+    }
 
-    <div id="main-panel" class="hidden">
-      
-      <div class="card">
-        <h3>Use Variables - Static</h3>
-        <p class="help-text">Places a clean data placeholder exactly where your cursor is blinking in the document.</p>
-        
-        <div class="form-group">
-          <label for="static-dropdown">Select Column Header</label>
-          <select id="static-dropdown" class="header-dropdown"></select>
-        </div>
-        <button class="action" onclick="insertStaticToken()">Insert Variable</button>
+    .card {
+      background: #f8f9fa;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    h3 {
+      margin-top: 0;
+      color: #1a73e8;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 4px;
+      font-size: 11px;
+      color: #3c4043;
+    }
+
+    select,
+    input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      height: 30px;
+    }
+
+    .radio-group {
+      margin: 8px 0 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .radio-group label {
+      display: inline-flex;
+      align-items: center;
+      font-weight: normal;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="main-panel">
+    <div class="card">
+      <h3>Insert Smart Variable</h3>
+
+      <div class="form-group">
+        <label>Please choose a variable</label>
+        <select id="smart-dropdown" class="header-dropdown"></select>
       </div>
 
-      <div class="card">
-        <h3>Use Variables - Conditional</h3>
-        <p class="help-text">Control the dynamic layout. Wrap sections or target a specific table row to hide/show visually based on your data rules.</p>
-        
+      <label>Display this only when...</label>
+      <div class="radio-group">
+        <label><input type="radio" name="display-type" value="always" checked onclick="toggleConditional(false)">
+          Always</label>
+        <label><input type="radio" name="display-type" value="conditional" onclick="toggleConditional(true)"> Only
+          when...</label>
+      </div>
+
+      <div id="conditional-fields" class="hidden">
+        <hr>
         <div class="form-group">
-          <label>Scope / Targeting</label>
+          <label>Where should this apply?</label>
           <div class="radio-group">
-            <label><input type="radio" name="scope" value="block" checked> Paragraph/Section</label>
-            <label><input type="radio" name="scope" value="row"> Table Row</label>
+            <label><input type="radio" name="target-type" value="paragraph" checked> Paragraph Text (Simple)</label>
+            <label><input type="radio" name="target-type" value="table"> Table Row (Advanced)</label>
           </div>
         </div>
 
         <div class="form-group">
-          <label for="cond-dropdown">If Variable</label>
-          <select id="cond-dropdown" class="header-dropdown"></select>
-        </div>
-
-        <div class="form-group">
-          <label for="cond-operator">Condition Rule</label>
-          <select id="cond-operator">
-            <option value="==">Equals (==)</option>
-            <option value="!=">Does Not Equal (!=)</option>
-            <option value=">=">Greater Than or Equal To (&gt;=)</option>
-            <option value="<=">Less Than or Equal To (&lt;=)</option>
-            <option value="contains">Contains text</option>
+          <label>When should this show?</label>
+          <select id="cond-operator" onchange="toggleValueBox()">
+            <option value="==">Matches exactly (==)</option>
+            <option value="!=">Does not match (!=)</option>
+            <option value="contains">Contains</option>
+            <option value="notcontains">Does Not Contain</option>
+            <option value="startswith">Starts With</option>
+            <option value="endswith">Ends With</option>
+            <option value="empty">Is Empty</option>
+            <option value="notempty">Is Not Empty</option>
+            <option value=">">Greater Than (&gt;)</option>
+            <option value="<">Less Than (&lt;)</option>
+            <option value=">=">Greater Than or Equal (&gt;=)</option>
+            <option value="<=">Less Than or Equal (&lt;=)</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label for="cond-value">Value to Compare</label>
-          <input type="text" id="cond-value" placeholder="e.g., 4 or Pass">
+          <label>Value to Compare</label>
+          <input type="text" id="cond-value" placeholder="e.g., Shalex">
         </div>
 
-        <button class="share" onclick="insertConditionalBlock()">Insert Conditional Block</button>
+        <hr>
+        <label>What should appear? Choose one option</label>
+        <select id="content-type" onchange="updateContentInput()">
+          <option value="variable">Variable</option>
+          <option value="text">Custom Text</option>
+          <option value="blank">Blank / Placeholder</option>
+        </select>
+
+        <div id="content-input-container" style="margin-top:8px;">
+          <!-- Dynamic input populated by updateContentInput -->
+        </div>
       </div>
 
+      <button class="action" onclick="handleSmartInsert()">Insert</button>
     </div>
+  </div>
 
-    <script>
-      // Automatically pull dropdown variables when sidebar finishes loading
-      window.onload = function() {
-        google.script.run
-          .withSuccessHandler(populateDropdowns)
-          .withFailureHandler(handleLoadError)
-          .getSheetHeaders();
-      };
+  <script>
+    // Populate dropdowns (Assume getSheetHeaders is available)
+    window.onload = () => google.script.run.withSuccessHandler(populateDropdowns).getSheetHeaders();
 
-      function populateDropdowns(headers) {
-        const dropdowns = document.querySelectorAll('.header-dropdown');
-        
-        if (!headers || headers.length === 0) {
-          handleLoadError("No columns found in your Google Sheet.");
-          return;
+    function populateDropdowns(headers) {
+      const selects = document.querySelectorAll('select.header-dropdown');
+      selects.forEach(s => headers.forEach(h => {
+        let o = document.createElement('option'); o.value = h; o.textContent = h; s.appendChild(o);
+      }));
+      updateContentInput();
+    }
+
+    function toggleConditional(show) {
+      document.getElementById('conditional-fields').classList.toggle('hidden', !show);
+    }
+
+    // Update the content input based on selected type
+    function updateContentInput() {
+
+      const type = document.getElementById('content-type').value;
+      const container = document.getElementById('content-input-container');
+
+      if (type === 'variable') {
+
+        container.innerHTML = `
+      <select id="content-value" class="header-dropdown"></select>
+
+      <div class="form-group" style="margin-top:8px;">
+        <label>Label (If you want any heading)</label>
+        <input type="text" id="content-label" placeholder="e.g. Company">
+      </div>
+    `;
+
+        const mainDropdown = document.getElementById('smart-dropdown');
+        const contentDropdown = document.getElementById('content-value');
+
+        for (let i = 0; i < mainDropdown.options.length; i++) {
+          const option = document.createElement('option');
+          option.value = mainDropdown.options[i].value;
+          option.textContent = mainDropdown.options[i].textContent;
+          contentDropdown.appendChild(option);
         }
 
-        dropdowns.forEach(select => {
-          select.innerHTML = ''; // Clear fallback states
-          headers.forEach(header => {
-            let option = document.createElement('option');
-            option.value = header;
-            option.textContent = header;
-            select.appendChild(option);
-          });
-        });
+      } else if (type === 'text') {
 
-        // Toggle UI view from loading state to ready state
-        document.getElementById('loader').classList.add('hidden');
-        document.getElementById('main-panel').classList.remove('hidden');
+        container.innerHTML = `
+      <input type="text"
+             id="content-value"
+             placeholder="Enter custom text...">
+    `;
+
+      } else {
+
+        container.innerHTML = '';
+
       }
+    }
 
-      function handleLoadError(error) {
-        const loader = document.getElementById('loader');
-        loader.style.color = '#d93025';
-        loader.textContent = "Error: " + (error.message || error);
+    // Handle the insert action
+function handleSmartInsert() {
+  const variable = document.getElementById('smart-dropdown').value;
+  const isConditional = document.querySelector('input[name="display-type"]:checked').value === 'conditional';
+
+  // Get the content based on the selected type
+  let content = "";
+  const contentType = document.getElementById("content-type").value;
+
+  if (contentType === "variable") {
+    const selectedVar = document.getElementById("content-value").value;
+    const labelEl = document.getElementById("content-label");
+    const label = labelEl ? labelEl.value.trim() : "";
+
+    if (label !== "") {
+      content = `${label}: {${selectedVar}}`;
+    } else {
+      content = `{${selectedVar}}`;
+    }
+  } else if (contentType === "text") {
+    content = document.getElementById("content-value").value;
+  } else {
+    content = "";
+  }
+
+  if (!isConditional) {
+    // Simple variable insertion
+    google.script.run.injectTagAtCursor(`{${variable}}`, '');
+  } else {
+    const targetType = document.querySelector('input[name="target-type"]:checked').value;
+    const op = document.getElementById('cond-operator').value;
+
+    let val = "";
+    if (op !== "empty" && op !== "notempty") {
+      val = document.getElementById('cond-value').value;
+    }
+
+    let opening, closing;
+
+    if (targetType === 'paragraph') {
+      // For paragraph: opening tag, content, closing tag
+      if (op === "empty" || op === "notempty") {
+        opening = `<<If: {${variable}} ${op}>>`;
+      } else {
+        opening = `<<If: {${variable}} ${op} '${val}'>>`;
       }
-
-      // Action: Inserts standard structural token {Header} to match Sheet Engine perfectly
-      function insertStaticToken() {
-        const selectElement = document.getElementById('static-dropdown');
-        const variable = selectElement.value;
-        if (!variable) return;
-        
-        // CHANGED: Dropped from double braces to single braces
-        const token = `{${variable}}`; 
-        
-        google.script.run
-          .withSuccessHandler(function() { console.log("Static single-brace token injected."); })
-          .withFailureHandler(function(err) { alert(err.message); })
-          .injectTagAtCursor(token, '');
+      closing = '<<EndIf>>';
+      // Pass content separately
+      google.script.run.injectTagAtCursor(opening, closing, content);
+    } else {
+      // For Table Row: content is included in the opening tag
+      // This way it's all in one line: <<RowIf: ...>>content
+      if (op === "empty" || op === "notempty") {
+        opening = `<<RowIf: {${variable}} ${op}>>${content}`;
+      } else {
+        opening = `<<RowIf: {${variable}} ${op} '${val}'>>${content}`;
       }
+      closing = '';
+      // Pass empty content since it's already in opening tag
+      google.script.run.injectTagAtCursor(opening, closing, '');
+    }
+  }
+}
+  </script>
+</body>
 
-      // Action: Injects conditional formatting blocks with single-brace variable rules
-      function insertConditionalBlock() {
-        const variable = document.getElementById('cond-dropdown').value;
-        const operator = document.getElementById('cond-operator').value;
-        const val = document.getElementById('cond-value').value;
-        const scope = document.querySelector('input[name="scope"]:checked').value;
-        
-        if (!variable) return;
-
-        if (scope === 'block') {
-          // CHANGED: Using single braces for the variable inside the block context
-          const openingTag = `<<If: {${variable}} ${operator} '${val}'>>`;
-          const closingTag = `<<EndIf>>`;
-          
-          google.script.run
-            .withSuccessHandler(function() { console.log("Conditional Block layout injected."); })
-            .withFailureHandler(function(err) { alert(err.message); })
-            .injectTagAtCursor(openingTag, closingTag);
-        } else {
-          // CHANGED: Using single braces for the row flag context
-          const inlineRowTag = `<<RowIf: {${variable}} ${operator} '${val}'>>`;
-          
-          google.script.run
-            .withSuccessHandler(function() { console.log("RowIf inline layout injected."); })
-            .withFailureHandler(function(err) { alert(err.message); })
-            .injectTagAtCursor(inlineRowTag, '');
-        }
-      }
-    </script>
-  </body>
 </html>

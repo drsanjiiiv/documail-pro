@@ -117,6 +117,8 @@ function DELETE_TEMPLATE(templateId) {
   var headers = [];
   var emailColumnIndex = -1;
   var hasEmailData = false;
+  var hasDocData = false;
+  var docStatusColName = "";
 
   if (lastColumn > 0) {
     headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
@@ -135,7 +137,6 @@ function DELETE_TEMPLATE(templateId) {
       }
     }
 
-    // Check if there's data in the email status column
     if (emailColumnIndex !== -1) {
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
@@ -146,6 +147,28 @@ function DELETE_TEMPLATE(templateId) {
             break;
           }
         }
+      }
+    }
+  }
+
+  // =======================================================
+  // CHECK MERGED DOC STATUS COLUMN (For PDF_ONLY and BOTH)
+  // =======================================================
+  if (targetTemplate.type === "PDF_ONLY" || targetTemplate.type === "BOTH") {
+    for (var c = 0; c < headers.length; c++) {
+      if (String(headers[c]).toLowerCase().indexOf("merged doc status") !== -1) {
+        docStatusColName = headers[c];
+        var lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          var dataRange = sheet.getRange(2, c + 1, lastRow - 1, 1).getValues();
+          for (var r = 0; r < dataRange.length; r++) {
+            if (String(dataRange[r][0]).trim() !== "") {
+              hasDocData = true;
+              break;
+            }
+          }
+        }
+        break;
       }
     }
   }
@@ -165,6 +188,20 @@ function DELETE_TEMPLATE(templateId) {
   }
 
   // =======================================================
+  // IF DOC DATA EXISTS - BLOCK DELETION
+  // =======================================================
+  if (hasDocData) {
+    ui.alert(
+      "❌ Cannot Delete Template",
+      "This template has existing merged document records in the column:\n\n" +
+      "📊 " + docStatusColName + "\n\n" +
+      "Please clear the data in this column first before deleting this template.",
+      ui.ButtonSet.OK
+    );
+    return { success: false, message: "Template has merged document data. Cannot delete." };
+  }
+
+  // =======================================================
   // ASK CONFIRMATION
   // =======================================================
   var confirmMessage = "";
@@ -178,7 +215,7 @@ function DELETE_TEMPLATE(templateId) {
     deleteEmailColumn = true;
   }
 
-  confirmMessage += "Merge Doc columns (F, G, H) will NOT be deleted.\n" +
+  confirmMessage += "Merge Doc columns of DocuMail PRO Engine will NOT be deleted.\n" +
     "Generated PDFs in Drive will NOT be deleted.\n\n" +
     "Are you sure you want to delete this template?";
 

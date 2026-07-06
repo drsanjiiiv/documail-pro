@@ -115,12 +115,27 @@ function FORMAT_DATE_FOR_DISPLAY(dateValue) {
 // ==========================================
 // NEW: FORMAT_NUMBER_FOR_DISPLAY
 // ==========================================
-function FORMAT_NUMBER_FOR_DISPLAY(value, currencySymbol) {
+var LOCALE_TO_CURRENCY = {
+  'en_IN': 'INR', 'en_US': 'USD', 'en_GB': 'GBP', 'en_AU': 'AUD',
+  'en_CA': 'CAD', 'de_DE': 'EUR', 'fr_FR': 'EUR', 'ja_JP': 'JPY',
+  'en_SG': 'SGD', 'ar_AE': 'AED'
+};
+
+function FORMAT_NUMBER_FOR_DISPLAY(value, currencyOverride) {
   if (typeof value !== 'number') return String(value || "");
-  currencySymbol = currencySymbol || "₹";
-  return currencySymbol + value.toLocaleString('en-IN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+
+  var locale = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetLocale() || 'en_US';
+  var currencyCode = currencyOverride || LOCALE_TO_CURRENCY[locale] || 'USD';
+
+  try {
+    return new Intl.NumberFormat(locale.replace('_', '-'), {
+      style: 'currency',
+      currency: currencyCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value);
+  } catch (e) {
+    return value.toFixed(2);
+  }
 }
 //file content end

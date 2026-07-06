@@ -3,6 +3,62 @@
  * Main Controller for the Document Template Designer.
  */
 
+function onOpen() {
+  createMenu();
+}
+
+/**
+ * Creates the custom menu in Google Docs
+ */
+function createMenu() {
+  var ui = DocumentApp.getUi();
+  ui.createMenu('🚀 DocuMail Pro Template')
+    .addItem('📄 Initialize DocuMail Pro Template', 'INITIALIZE_DOC_DESIGNER_SIDEBAR')
+    .addItem('📝 Open Smart Variable Window', 'OPEN_SMART_VARIABLE_WINDOW')
+    .addSeparator()
+    .addItem('❓ Help', 'showHelp')
+    .addToUi();
+}
+
+/**
+ * Shows help information to the user
+ */
+function showHelp() {
+  var ui = DocumentApp.getUi();
+  ui.alert(
+    '📚 DocuMail Pro - Help',
+    'How to use Smart Variables:\n\n' +
+    '1. Click "Start Dynamic Template" to clear the canvas and start fresh\n' +
+    '2. Click "Open Smart Variable Window" to open the sidebar\n' +
+    '3. Select a variable from the dropdown\n' +
+    '4. Choose to insert it "Always" or "Only when..." with conditions\n' +
+    '5. Click "Insert" to add it to your template\n\n' +
+    'Variables will be replaced with actual data when generating documents.',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Open Smart Variable Window - Opens the sidebar WITHOUT resetting the canvas
+ */
+function OPEN_SMART_VARIABLE_WINDOW() {
+  try {
+    var ui = DocumentApp.getUi();
+
+    // Evaluate and render the HTML sidebar panel
+    var htmlOutput = HtmlService.createTemplateFromFile('SidebarDocView')
+      .evaluate()
+      .setTitle('DocuMail Pro - Smart Variables')
+      .setWidth(300);
+
+    ui.showSidebar(htmlOutput);
+
+  } catch (error) {
+    Logger.log("Error opening sidebar: " + error.toString());
+    DocumentApp.getUi().alert("Could not open sidebar: " + error.message);
+  }
+}
+
 /**
  * Checks for existing custom layout text, prompts user, and opens the sidebar interface.
  */
@@ -11,14 +67,14 @@ function INITIALIZE_DOC_DESIGNER_SIDEBAR() {
     var doc = DocumentApp.getActiveDocument();
     var body = doc.getBody();
     var ui = DocumentApp.getUi();
-    
+
     // 1. Get all text currently sitting on the canvas
     var currentText = body.getText().trim();
-    
+
     // 2. Define our standard onboarding placeholder phrases
     var line1 = "📄 DocuMail Pro Master Template Canvas";
     var line2 = "Please use the menu item to start designing your automation layout:";
-    
+
     // Check if the document contains content that isn't our onboarding text
     var hasCustomContent = false;
     if (currentText.length > 0) {
@@ -26,7 +82,7 @@ function INITIALIZE_DOC_DESIGNER_SIDEBAR() {
         hasCustomContent = true;
       }
     }
-    
+
     // 3. Trigger Confirmation Box if custom user data is detected
     if (hasCustomContent) {
       var response = ui.alert(
@@ -34,26 +90,26 @@ function INITIALIZE_DOC_DESIGNER_SIDEBAR() {
         'There is data in your document, it will be erased. Are you sure?',
         ui.ButtonSet.YES_NO
       );
-      
+
       // If user clicks "NO", stop execution instantly
       if (response !== ui.Button.YES) {
         doc.toast("Operation cancelled. Your existing template was saved.", "🚀 DocuMail Pro");
-        return; 
+        return;
       }
     }
-    
+
     // 4. Wipe the canvas completely clean
     body.clear();
     body.appendParagraph(""); // Google Docs require at least one structural paragraph element
-    
+
     // 5. Evaluate and render the HTML sidebar panel
     var htmlOutput = HtmlService.createTemplateFromFile('SidebarDocView')
-        .evaluate()
-        .setTitle('DocuMail Pro - Template Designer')
-        .setWidth(300);
-        
+      .evaluate()
+      .setTitle('DocuMail Pro - Template Designer')
+      .setWidth(300);
+
     ui.showSidebar(htmlOutput);
-    
+
   } catch (error) {
     Logger.log("Error initializing document canvas workspace: " + error.toString());
     DocumentApp.getUi().alert("Could not load designer panel: " + error.message);
@@ -61,35 +117,33 @@ function INITIALIZE_DOC_DESIGNER_SIDEBAR() {
 }
 
 /**
- * Universal token injector engine. Natively avoids empty text element insertion bugs.
+ * Universal token injector engine.
+ * Added 'content' parameter to allow custom template content insertion.
  */
-function injectTagAtCursor(openingTag, closingTag) {
+function injectTagAtCursor(openingTag, closingTag, content) {
   try {
     var doc = DocumentApp.getActiveDocument();
     var body = doc.getBody();
     var cursor = doc.getCursor();
-    
+
     if (!cursor) {
-      throw new Error("Please click your mouse cursor inside the document body where you want to insert this layout token.");
+      throw new Error("Please click your mouse cursor inside the document body.");
     }
-    
+
     var element = cursor.getElement();
     var offset = cursor.getOffset();
     var textElement = null;
-    
+    var parentParagraph = null;
+
+    // Get the current text element and its parent paragraph
     var elementType = element.getType();
-    
     if (elementType === DocumentApp.ElementType.TEXT) {
       textElement = element.asText();
-      
-      // Focus drift protection
-      if (offset === 0 && textElement.getText().length > 0) {
-        offset = textElement.getText().length;
-      }
-      
+      parentParagraph = textElement.getParent();
+      if (offset === 0 && textElement.getText().length > 0) offset = textElement.getText().length;
     } else if (elementType === DocumentApp.ElementType.PARAGRAPH) {
       var paragraph = element.asParagraph();
-      // SAFE FIX: If paragraph is empty, initialize with a space instead of an empty string
+      parentParagraph = paragraph;
       if (paragraph.getText() === "") {
         textElement = paragraph.appendText(" ");
         offset = 1;
@@ -99,6 +153,7 @@ function injectTagAtCursor(openingTag, closingTag) {
       }
     } else if (elementType === DocumentApp.ElementType.BODY_SECTION || elementType === DocumentApp.ElementType.DOCUMENT) {
       var targetPara = body.getParagraphs()[0] || body.appendParagraph("");
+      parentParagraph = targetPara;
       if (targetPara.getText() === "") {
         textElement = targetPara.appendText(" ");
         offset = 1;
@@ -108,53 +163,106 @@ function injectTagAtCursor(openingTag, closingTag) {
       }
     } else {
       var parent = element.getParent();
-      while (parent && parent.getType() !== DocumentApp.ElementType.PARAGRAPH) {
-        parent = parent.getParent();
-      }
+      while (parent && parent.getType() !== DocumentApp.ElementType.PARAGRAPH) parent = parent.getParent();
       if (parent) {
-        var paragraph = parent.asParagraph();
-        if (paragraph.getText() === "") {
-          textElement = paragraph.appendText(" ");
+        parentParagraph = parent.asParagraph();
+        if (parentParagraph.getText() === "") {
+          textElement = parentParagraph.appendText(" ");
           offset = 1;
         } else {
-          textElement = paragraph.getChild(0).asText();
+          textElement = parentParagraph.getChild(0).asText();
           offset = textElement.getText().length;
         }
       } else {
-        throw new Error("Please click inside an active text line on the page.");
+        throw new Error("Please click inside an active text line.");
       }
     }
-    
+
     var closeStr = closingTag ? closingTag.trim() : "";
     
-    if (closeStr !== "") {
-      // Wrapper block logic
-      textElement.insertText(offset, openingTag);
-      
-      var parentElement = textElement.getParent();
-      while (parentElement && parentElement.getType() !== DocumentApp.ElementType.PARAGRAPH && parentElement.getType() !== DocumentApp.ElementType.LIST_ITEM) {
-        parentElement = parentElement.getParent();
-      }
-      
-      var container = parentElement.getParent(); 
-      var structuralIndex = container.getChildIndex(parentElement);
-      
-      var closePara = container.insertParagraph(structuralIndex + 1, closeStr);
-      var placeholderPara = container.insertParagraph(structuralIndex + 1, "[ Enter your conditional template content here ]");
-      placeholderPara.setItalic(true);
-      
-      var nextPosition = doc.newPosition(placeholderPara.getChild(0), 2);
-      doc.setCursor(nextPosition);
-      
+    // Determine what content to insert
+    var contentToInsert;
+    if (content !== undefined && content !== null && content.trim() !== "") {
+      contentToInsert = content;
     } else {
-      // Inline token insertion
-      textElement.insertText(offset, openingTag);
-      var newPosition = doc.newPosition(textElement, offset + openingTag.length);
-      doc.setCursor(newPosition);
+      contentToInsert = "[ Enter your conditional template content here ]";
+    }
+
+    // ============================================================
+    // Get the full text and split
+    // ============================================================
+    var fullText = textElement.getText();
+    var beforeText = fullText.substring(0, offset);
+    var afterText = fullText.substring(offset);
+    
+    // Clear the current text element
+    textElement.setText("");
+    
+    // Insert the text before the cursor
+    textElement.appendText(beforeText);
+    
+    // ============================================================
+    // GET DEFAULT FORMATTING FROM THE PARAGRAPH
+    // ============================================================
+    // Get the paragraph's default formatting
+    var defaultFontSize = parentParagraph.getFontSize();
+    var defaultForegroundColor = parentParagraph.getForegroundColor();
+    var defaultFontFamily = parentParagraph.getFontFamily();
+    
+    // If paragraph has no explicit formatting, use body defaults
+    if (!defaultFontSize) defaultFontSize = 11;
+    if (!defaultForegroundColor) defaultForegroundColor = "#000000";
+    if (!defaultFontFamily) defaultFontFamily = "Arial";
+    
+    // ============================================================
+    // CREATE SEPARATE TEXT ELEMENTS FOR EACH PART
+    // ============================================================
+    
+    // 1. Opening tag - STYLED
+    var openingText = parentParagraph.appendText(openingTag);
+    openingText.setForegroundColor("#b0b0b0");
+    openingText.setFontSize(9);
+    openingText.setItalic(true);
+    
+    // 2. Content - APPLY DEFAULT FORMATTING EXPLICITLY
+    var contentText = parentParagraph.appendText(contentToInsert);
+    // Explicitly set to default values (not null)
+    contentText.setForegroundColor(defaultForegroundColor);
+    contentText.setFontSize(defaultFontSize);
+    contentText.setFontFamily(defaultFontFamily);
+    contentText.setItalic(false);
+    contentText.setBold(false);
+    contentText.setUnderline(false);
+    
+    // 3. Closing tag (if exists) - STYLED
+    var closingText = null;
+    if (closeStr !== "") {
+      closingText = parentParagraph.appendText(closeStr);
+      closingText.setForegroundColor("#b0b0b0");
+      closingText.setFontSize(9);
+      closingText.setItalic(true);
     }
     
-    return { success: true };
+    // 4. Remaining text after cursor
+    // Ensure there's always a default-formatted run at the end, so grey/italic
+    // from the closing tag never becomes the "last format" a new line inherits.
+    var afterTextNode = parentParagraph.appendText(afterText.length > 0 ? afterText : " ");
+    afterTextNode.setForegroundColor(defaultForegroundColor);
+    afterTextNode.setFontSize(defaultFontSize);
+    afterTextNode.setFontFamily(defaultFontFamily);
+    afterTextNode.setItalic(false);
+    afterTextNode.setBold(false);
+    afterTextNode.setUnderline(false);
     
+    // ============================================================
+    // SET CURSOR POSITION - At the end of content
+    // ============================================================
+    
+    var cursorPos = doc.newPosition(contentText, contentText.getText().length);
+    doc.setCursor(cursorPos);
+
+    return { success: true };
+
   } catch (error) {
     Logger.log("Core insertion crash tracker: " + error.toString());
     throw new Error(error.message);
@@ -162,354 +270,46 @@ function injectTagAtCursor(openingTag, closingTag) {
 }
 
 // ======================================================================
-// 🔥 CONDITIONAL PROCESSING FUNCTIONS (ADD THESE TO DocuMain.gs)
+// 📦 Styling of tags - For existing documents (legacy support)
 // ======================================================================
-
-/**
- * Main evaluation router. Parses variables and values to run correct logical matches.
- * @param {any} varValue The actual data coming from the Google Sheet row.
- * @param {string} operator The comparison operator (==, !=, >=, <=, contains).
- * @param {string} targetValue The criteria rule value set in the template sidebar.
- * @return {boolean} True if the row data matches the rule parameters.
- */
-function evaluateCondition(varValue, operator, targetValue) {
-  // Sanitize values to strings for safety, trimming trailing whitespaces
-  var currentVal = varValue !== undefined && varValue !== null ? String(varValue).trim() : "";
-  var criteriaVal = targetValue !== undefined && targetValue !== null ? String(targetValue).trim() : "";
-
-  // If both values represent numerical quantities, cast them to true floats for perfect math calculations
-  var isNumeric = !isNaN(currentVal) && !isNaN(criteriaVal) && currentVal !== "" && criteriaVal !== "";
+function styleLogicTags() {
+  var body = DocumentApp.getActiveDocument().getBody();
   
-  if (isNumeric) {
-    var numCurrent = parseFloat(currentVal);
-    var numCriteria = parseFloat(criteriaVal);
+  var tagDefinitions = [
+    { tag: "<<If:", length: 5 },
+    { tag: "<<EndIf>>", length: 9 },
+    { tag: "<<RowIf:", length: 8 }
+  ];
+  
+  tagDefinitions.forEach(function(item) {
+    var tag = item.tag;
+    var tagLength = item.length;
+    var found = body.findText(tag);
     
-    switch (operator) {
-      case '==': return numCurrent === numCriteria;
-      case '!=': return numCurrent !== numCriteria;
-      case '>=': return numCurrent >= numCriteria;
-      case '<=': return numCurrent <= numCriteria;
-      case 'contains': return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
-      default: return false;
-    }
-  }
-
-  // Fallback to strict string comparisons if evaluating textual data fields (e.g. "Pass" vs "Fail")
-  switch (operator) {
-    case '==': return currentVal.toLowerCase() === criteriaVal.toLowerCase();
-    case '!=': return currentVal.toLowerCase() !== criteriaVal.toLowerCase();
-    case '>=': return currentVal.toLowerCase() >= criteriaVal.toLowerCase();
-    case '<=': return currentVal.toLowerCase() <= criteriaVal.toLowerCase();
-    case 'contains': return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
-    default: return false;
-  }
-}
-
-/**
- * ============================================================================
- * DOCUMAIL PRO CONDITIONAL BLOCK PROCESSOR
- * ============================================================================
- * Processes <<If: ... >> ... <<EndIf>> structures on the document canvas.
- * 
- * IMPORTANT: This function expects that {VARIABLES} have ALREADY been replaced
- * with actual values by engine.gs. If called with raw variables still present,
- * it will attempt to replace them using rowDataMap.
- * ============================================================================
- */
-function processConditionalBlocks(body, rowDataMap) {
-  try {
-    Logger.log("processConditionalBlocks: Starting with rowDataMap keys: " + Object.keys(rowDataMap || {}).join(', '));
-    
-    if (!rowDataMap) {
-      Logger.log("processConditionalBlocks: No rowDataMap provided, skipping");
-      return;
-    }
-    
-    // STEP 1: Check if there are any unprocessed {VARIABLES} in the document
-    // This handles the case where engine.gs might not have replaced them yet
-    var fullText = body.getText();
-    var variableRegex = /\{([^}]+)\}/g;
-    var variableMatch;
-    var hasUnprocessedVariables = false;
-    
-    while ((variableMatch = variableRegex.exec(fullText)) !== null) {
-      hasUnprocessedVariables = true;
-      break;
-    }
-    
-    // If there are unprocessed variables, replace them with values from rowDataMap
-    if (hasUnprocessedVariables) {
-      Logger.log("processConditionalBlocks: Found unprocessed variables, replacing them first");
-      variableRegex.lastIndex = 0; // Reset regex
-      var variablesToReplace = new Set();
+    while (found) {
+      var text = found.getElement().asText();
+      var start = found.getStartOffset();
+      var end = found.getEndOffsetInclusive();
+      var fullText = text.getText();
       
-      while ((variableMatch = variableRegex.exec(fullText)) !== null) {
-        variablesToReplace.add(variableMatch[1]);
+      // Style the tag only
+      var tagEnd = Math.min(start + tagLength - 1, fullText.length - 1);
+      text.setForegroundColor(start, tagEnd, "#b0b0b0");
+      text.setFontSize(start, tagEnd, 9);
+      text.setItalic(start, tagEnd, true);
+      
+      // Reset formatting for content after tag (prevents bleed)
+      var contentStart = tagEnd + 1;
+      var contentEnd = fullText.length - 1;
+      if (contentStart <= contentEnd) {
+        text.setForegroundColor(contentStart, contentEnd, null);
+        text.setFontSize(contentStart, contentEnd, null);
+        text.setItalic(contentStart, contentEnd, false);
+        text.setBold(contentStart, contentEnd, false);
+        text.setUnderline(contentStart, contentEnd, false);
       }
       
-      variablesToReplace.forEach(function(varName) {
-        var placeholder = "{" + varName + "}";
-        var replacementValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                              String(rowDataMap[varName]) : "";
-        body.replaceText(escapeRegexString(placeholder), replacementValue);
-        Logger.log("processConditionalBlocks: Replaced " + placeholder + " with '" + replacementValue + "'");
-      });
+      found = body.findText(tag, found);
     }
-    
-    // STEP 2: Now process the conditional blocks with the replaced values
-    var textStr = body.getText();
-    Logger.log("processConditionalBlocks: Current text preview: " + textStr.substring(0, 200) + "...");
-    
-    // Matches <<If: ... >> ... <<EndIf>> smoothly across paragraph line breaks
-    var blockRegex = /<<If:\s*([^>]+)>>([\s\S]*?)<<EndIf>>/gi;
-    var match;
-    var modifications = [];
-    
-    while ((match = blockRegex.exec(textStr)) !== null) {
-      var fullMatchText = match[0];
-      var conditionExpression = match[1].trim();
-      var conditionalContent = match[2];
-      
-      Logger.log("processConditionalBlocks: Found conditional block: " + conditionExpression);
-      
-      // Parse the condition expression
-      // Handles patterns like: "Deepak == 'Sandeep'" or "{NAME} == 'Sandeep'"
-      var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
-      var syntaxMatch = syntaxRegex.exec(conditionExpression);
-      
-      var conditionMet = false;
-      
-      if (syntaxMatch) {
-        var leftSide = syntaxMatch[1].trim();
-        var operator = syntaxMatch[2].trim();
-        var targetValue = syntaxMatch[3].trim();
-        
-        Logger.log("processConditionalBlocks: Parsed - leftSide: '" + leftSide + "', operator: '" + operator + "', targetValue: '" + targetValue + "'");
-        
-        // The left side might be:
-        // 1. A raw value like "Deepak" (already replaced by engine.gs)
-        // 2. A variable placeholder like "{NAME}" (if replacement didn't happen)
-        var liveValue = leftSide;
-        
-        // If it still looks like a variable placeholder, try to get it from rowDataMap directly
-        if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
-          var varName = leftSide.slice(1, -1);
-          liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                     String(rowDataMap[varName]) : leftSide;
-          Logger.log("processConditionalBlocks: Resolved placeholder to: '" + liveValue + "'");
-        }
-        
-        conditionMet = evaluateCondition(liveValue, operator, targetValue);
-        Logger.log("processConditionalBlocks: Condition result: " + conditionMet);
-      } else {
-        Logger.log("processConditionalBlocks: Could not parse condition expression: " + conditionExpression);
-      }
-      
-      if (conditionMet) {
-        // Condition is True: Keep the content, remove the conditional wrapper
-        Logger.log("processConditionalBlocks: Condition TRUE - keeping content");
-        modifications.push({
-          match: fullMatchText,
-          replacement: conditionalContent
-        });
-      } else {
-        // Condition is False: Remove everything
-        Logger.log("processConditionalBlocks: Condition FALSE - removing content");
-        modifications.push({
-          match: fullMatchText,
-          replacement: ""
-        });
-      }
-    }
-    
-    // Apply all modifications (process from last to first to maintain indices)
-    for (var i = modifications.length - 1; i >= 0; i--) {
-      var mod = modifications[i];
-      body.replaceText(escapeRegexString(mod.match), mod.replacement);
-      Logger.log("processConditionalBlocks: Applied modification " + i);
-    }
-    
-    Logger.log("processConditionalBlocks: Completed successfully");
-    
-  } catch (err) {
-    Logger.log("Error evaluating block conditions: " + err.toString());
-    console.error("Error evaluating block conditions: " + err.toString());
-    throw err;
-  }
-}
-
-/**
- * Process conditional table rows - handles <<RowIf: ... >> ... <<EndRowIf>> 
- * for table row-level conditions
- */
-function processConditionalTableRows(body, rowDataMap) {
-  try {
-    Logger.log("processConditionalTableRows: Starting");
-    
-    if (!rowDataMap) {
-      Logger.log("processConditionalTableRows: No rowDataMap provided, skipping");
-      return;
-    }
-    
-    // First, replace any unprocessed variables in the document
-    var fullText = body.getText();
-    var variableRegex = /\{([^}]+)\}/g;
-    var variableMatch;
-    var hasUnprocessedVariables = false;
-    
-    while ((variableMatch = variableRegex.exec(fullText)) !== null) {
-      hasUnprocessedVariables = true;
-      break;
-    }
-    
-    if (hasUnprocessedVariables) {
-      Logger.log("processConditionalTableRows: Found unprocessed variables, replacing them first");
-      variableRegex.lastIndex = 0;
-      var variablesToReplace = new Set();
-      
-      while ((variableMatch = variableRegex.exec(fullText)) !== null) {
-        variablesToReplace.add(variableMatch[1]);
-      }
-      
-      variablesToReplace.forEach(function(varName) {
-        var placeholder = "{" + varName + "}";
-        var replacementValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                              String(rowDataMap[varName]) : "";
-        body.replaceText(escapeRegexString(placeholder), replacementValue);
-      });
-    }
-    
-    // Process table row conditions
-    var tables = body.getTables();
-    for (var t = 0; t < tables.length; t++) {
-      var table = tables[t];
-      var rows = table.getRows();
-      var rowsToRemove = [];
-      
-      for (var r = 0; r < rows.length; r++) {
-        var row = rows[r];
-        var rowText = row.getText();
-        
-        // Check if this row has a condition
-        var conditionMatch = rowText.match(/<<RowIf:\s*([^>]+)>>/i);
-        if (conditionMatch) {
-          var conditionExpression = conditionMatch[1].trim();
-          
-          // Parse the condition
-          var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
-          var syntaxMatch = syntaxRegex.exec(conditionExpression);
-          
-          var conditionMet = false;
-          
-          if (syntaxMatch) {
-            var leftSide = syntaxMatch[1].trim();
-            var operator = syntaxMatch[2].trim();
-            var targetValue = syntaxMatch[3].trim();
-            
-            var liveValue = leftSide;
-            
-            // If it's a variable placeholder, resolve it
-            if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
-              var varName = leftSide.slice(1, -1);
-              liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                         String(rowDataMap[varName]) : leftSide;
-            }
-            
-            conditionMet = evaluateCondition(liveValue, operator, targetValue);
-          }
-          
-          // If condition is false, mark this row for removal
-          if (!conditionMet) {
-            rowsToRemove.push(r);
-          }
-        }
-      }
-      
-      // Remove rows from bottom to top to maintain indices
-      for (var i = rowsToRemove.length - 1; i >= 0; i--) {
-        table.removeRow(rowsToRemove[i]);
-        Logger.log("processConditionalTableRows: Removed row " + rowsToRemove[i]);
-      }
-    }
-    
-    Logger.log("processConditionalTableRows: Completed successfully");
-    
-  } catch (err) {
-    Logger.log("Error processing conditional table rows: " + err.toString());
-    console.error("Error processing conditional table rows: " + err.toString());
-  }
-}
-
-/**
- * Helper to escape special regular expression characters safely out of raw template strings
- */
-function escapeRegexString(str) {
-  return str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-}
-
-// ======================================================================
-// 📦 OPTIONAL: Template Preview Functions (If you want to test in document)
-// ======================================================================
-
-/**
- * Test function to preview conditional processing with sample data
- * Call this from the script editor to test your template
- */
-function TEST_CONDITIONAL_PROCESSING() {
-  try {
-    var doc = DocumentApp.getActiveDocument();
-    var body = doc.getBody();
-    
-    // Sample data for testing
-    var testData = {
-      'NAME': 'Deepak',
-      'EMAIL': 'deepak@example.com',
-      'AMOUNT': '1000',
-      'STATUS': 'Active'
-    };
-    
-    Logger.log("Testing conditional processing with data: " + JSON.stringify(testData));
-    processConditionalBlocks(body, testData);
-    processConditionalTableRows(body, testData);
-    
-    DocumentApp.getUi().alert('✅ Test completed! Check the document to see the results.');
-    
-  } catch (error) {
-    DocumentApp.getUi().alert('❌ Error: ' + error.toString());
-    Logger.log("Test error: " + error.toString());
-  }
-}
-
-/**
- * Debug function to check what variables are in the document
- */
-function DEBUG_CHECK_TEMPLATE_VARIABLES() {
-  try {
-    var doc = DocumentApp.getActiveDocument();
-    var body = doc.getBody();
-    var text = body.getText();
-    
-    var variableRegex = /\{([^}]+)\}/g;
-    var match;
-    var variables = [];
-    
-    while ((match = variableRegex.exec(text)) !== null) {
-      if (variables.indexOf(match[1]) === -1) {
-        variables.push(match[1]);
-      }
-    }
-    
-    var ui = DocumentApp.getUi();
-    if (variables.length === 0) {
-      ui.alert('ℹ️ No variables found in the document.');
-    } else {
-      ui.alert('📋 Variables found:\n\n' + variables.join('\n'));
-    }
-    
-    return variables;
-    
-  } catch (error) {
-    Logger.log("Debug error: " + error.toString());
-    return [];
-  }
+  });
 }

@@ -54,6 +54,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
     if (lastRow < 2) return "No data rows found.";
 
     var dataValues = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getValues();
+var displayValues = sheet.getRange(2, 1, lastRow - 1, allHeaders.length).getDisplayValues();
     var processedCount = 0;
     var skippedCount = 0;
 
@@ -141,27 +142,32 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
       var newDoc = DocumentApp.openById(newDocId);
       var body = newDoc.getBody();
 
-      // ======================================================================
+            // ======================================================================
       // 🔥 INJECTION: PROCESS CONDITIONALS BEFORE SWAPPING RAW TAGS
       // ======================================================================
-      if (typeof processConditionalBlocks === 'function') {
-        var rowDataMap = {};
-        for (var h = 0; h < allHeaders.length; h++) {
-          rowDataMap[allHeaders[h]] = rowData[h];
-        }
-
-        // STEP 1: Process table rows FIRST (before body.setText destroys them)
-        if (typeof processConditionalTableRows === 'function') {
-          Logger.log("📋 Processing table rows first...");
-          processConditionalTableRows(body, rowDataMap);
-        } else {
-          Logger.log("⚠️ processConditionalTableRows NOT found!");
-        }
-
-        // STEP 2: Process paragraph blocks (this will use body.setText)
-        Logger.log("📋 Processing paragraph blocks...");
-        processConditionalBlocks(body, rowDataMap);
+      var rowDataMap = {};
+      var displayDataMap = {};
+      for (var h = 0; h < allHeaders.length; h++) {
+        rowDataMap[allHeaders[h]] = rowData[h];
+        displayDataMap[allHeaders[h]] = displayValues[i][h];
       }
+
+      // STEP 1: Process table rows FIRST (before body.setText destroys them)
+      if (typeof processConditionalTableRows === 'function') {
+        Logger.log("📋 Processing table rows first...");
+        processConditionalTableRows(body, rowDataMap, displayDataMap);
+      } else {
+        Logger.log("⚠️ processConditionalTableRows NOT found!");
+      }
+
+      // STEP 2: Process paragraph blocks
+      if (typeof processConditionalBlocks === 'function') {
+        Logger.log("📋 Processing paragraph blocks...");
+        processConditionalBlocks(body, rowDataMap, displayDataMap);
+      } else {
+        Logger.log("⚠️ processConditionalBlocks NOT found!");
+      }
+      // ======================================================================
       // ======================================================================
 
       // Replace tags using mapped values - PRESERVE FORMATTING
@@ -280,7 +286,7 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE(payload) {
 // ==========================================
 // FUNCTION: EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW Starts
 // ==========================================
-function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, rowNum, allHeaders) {
+function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, rowNum, allHeaders, singleRowDisplayData) {
   if (!singleRowData || singleRowData.length === 0) {
     return { success: false, error: "No data row provided." };
   }
@@ -328,12 +334,14 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
     // ======================================================================
     if (typeof processConditionalBlocks === 'function') {
       var rowDataMap = {};
+      var displayDataMap = {};
       for (var h = 0; h < allHeaders.length; h++) {
         rowDataMap[allHeaders[h]] = rowData[h];
+        displayDataMap[allHeaders[h]] = singleRowDisplayData ? singleRowDisplayData[h] : String(rowData[h] || "");
       }
-      processConditionalBlocks(body, rowDataMap);
+      processConditionalBlocks(body, rowDataMap, displayDataMap);
       if (typeof processConditionalTableRows === 'function') {
-        processConditionalTableRows(body, rowDataMap);
+        processConditionalTableRows(body, rowDataMap, displayDataMap);
       }
     }
     // ======================================================================
@@ -543,15 +551,22 @@ function PREVIEW_TEMPLATE(templateId) {
     }
 
     if (!previewRow) {
-      return {
-        name: template.name,
-        previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 20px;">' +
-          '<h2 style="color:#f2994a;">ℹ️ No Rows Eligible</h2><hr>' +
-          '<p>All rows matching your filter conditions have already been merged successfully with a status of <strong>Success / Sent</strong>.</p>' +
-          '<p>There are no fresh pending records available to preview layout results against.</p>' +
-          '<div style="margin-top:20px; text-align:center;"><button onclick="google.script.host.close()" style="background:#1a73e8; color:white; border:none; padding:8px 24px; border-radius:4px; cursor:pointer;">Close</button></div></div>'
-      };
-    }
+  return {
+    name: template.name,
+    previewHtml: '<div style="font-family: Roboto, sans-serif; padding: 24px;">' +
+      '<h2 style="color: #f2994a; margin: 0 0 12px 0;">ℹ️ No Rows Eligible</h2>' +
+      '<hr style="border: none; border-top: 1px solid #e8eaed; margin: 12px 0;">' +
+      '<div style="background: #fff3cd; padding: 16px; border-radius: 6px; margin: 12px 0; border-left: 4px solid #f2994a; color: #856404; line-height: 1.6;">' +
+      'All rows matching your filter conditions have already been merged successfully with a status of <strong>Success</strong>.<br><br>' +
+      'There are no fresh pending records available to preview layout results against.' +
+      '</div>' +
+      '<hr style="border: none; border-top: 1px solid #e8eaed; margin: 16px 0;">' +
+      '<div style="margin-top: 20px; text-align: center;">' +
+      '<button onclick="google.script.host.close()" style="background: #1a73e8; color: white; border: none; padding: 10px 28px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">Close</button>' +
+      '</div>' +
+      '</div>'
+  };
+}
 
     var displayFileName = template.config?.namePattern || "Document";
     for (var h = 0; h < allHeaders.length; h++) {
@@ -658,6 +673,7 @@ function PREVIEW_TEMPLATE(templateId) {
         previewHtml += '<p style="margin:0; color:#137333;"><strong>✅ Preview File Generated!</strong></p>';
         previewHtml += '<p style="margin:5px 0;"><strong>File:</strong> ' + escapeHtml(fileName) + '</p>';
         previewHtml += '<p style="margin:5px 0;"><a href="' + fileUrl + '" target="_blank">📂 Click here to open the preview file</a></p>';
+        previewHtml += '<p style="margin:8px 0 0 0; color:#c5221f; font-weight:500; border-top:1px solid #dadce0; padding-top:8px;">⚠️ This is a Preview Only file - not for production use</p>';
         previewHtml += '</div>';
       } else {
         previewHtml += '<p><em>`✅ Preview file generated with PROV- prefix. Check your Google Drive folder.`</em></p>';
@@ -771,6 +787,7 @@ function RUN_TEMPLATE(templateId) {
     if (emailColIdx === -1) emailColIdx = 4;
 
     var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
+    var displayData = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getDisplayValues();
     var processedCount = 0;
     var pdfSkippedCount = 0;
     var emailSentCount = 0;
@@ -807,7 +824,8 @@ function RUN_TEMPLATE(templateId) {
         config.isPreview = false;
 
         var singleRowData = [data[i]];
-        var result = EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(config, singleRowData, rowNum, allHeaders);
+        var singleRowDisplayData = displayData[i];
+        var result = EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(config, singleRowData, rowNum, allHeaders, singleRowDisplayData);
 
         if (result.success) {
           pdfGenerated = true;
@@ -1039,15 +1057,16 @@ function GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName) {
 function evaluateCondition(varValue, operator, targetValue) {
   var currentVal = varValue !== undefined && varValue !== null ? String(varValue).trim() : "";
   var criteriaVal = targetValue !== undefined && targetValue !== null ? String(targetValue).trim() : "";
+  var currentValClean = currentVal.replace(/[^0-9.\-]/g, "");
+  var criteriaValClean = criteriaVal.replace(/[^0-9.\-]/g, "");
+  var isNumeric = currentValClean !== "" && criteriaValClean !== "" && !isNaN(currentValClean) && !isNaN(criteriaValClean);
   operator = operator.toLowerCase().trim();
 
   Logger.log("  evaluateCondition: currentVal='" + currentVal + "', operator='" + operator + "', criteriaVal='" + criteriaVal + "'");
 
-  var isNumeric = !isNaN(currentVal) && !isNaN(criteriaVal) && currentVal !== "" && criteriaVal !== "";
-
   if (isNumeric) {
-    var numCurrent = parseFloat(currentVal);
-    var numCriteria = parseFloat(criteriaVal);
+    var numCurrent = parseFloat(currentValClean);
+    var numCriteria = parseFloat(criteriaValClean);
     switch (operator) {
       case '==': case '=': return numCurrent === numCriteria;
       case '!=': case '<>': return numCurrent !== numCriteria;
@@ -1076,138 +1095,135 @@ function evaluateCondition(varValue, operator, targetValue) {
  * Process conditional blocks - <<If: ... >> ... <<EndIf>>
  * FIXED: Properly handles both TRUE and FALSE conditions
  */
-function processConditionalBlocks(body, rowDataMap) {
+function processConditionalBlocks(body, rowDataMap, displayDataMap) {
   try {
-    Logger.log("🔍 processConditionalBlocks: Starting Structural Cleanup...");
-    
-    // FIRST: Replace ALL {VARIABLES} in the entire document
-    Logger.log("📋 Replacing variables...");
-    for (var key in rowDataMap) {
-      var placeholder = "{" + key + "}";
-      var replacementValue = String(rowDataMap[key] || "");
-      body.replaceText(escapeRegexString(placeholder), replacementValue);
-      Logger.log("  Replaced " + placeholder + " with '" + replacementValue + "'");
+    Logger.log("🔍 processConditionalBlocks: Starting...");
+
+    var paragraphs = body.getParagraphs();
+    var texts = paragraphs.map(function (p) { return p.getText(); });
+    var fullText = texts.join("\n");
+
+    var cum = [];
+    var running = 0;
+    for (var i = 0; i < texts.length; i++) {
+      cum.push(running);
+      running += texts[i].length + 1;
     }
-    
-    // SECOND: Process <<If: ... >> ... <<EndIf>> blocks
-    Logger.log("📋 Processing <<If: blocks...");
-    
-    // Keep processing until no more blocks found
-    var blocksProcessed = 0;
-    var maxIterations = 50;
-    
-    while (blocksProcessed < maxIterations) {
-      // Find the first <<If: marker
-      var startRange = body.findText("<<If:");
-      if (!startRange) {
-        Logger.log("  No more <<If: blocks found");
-        break;
+    function locate(flatOffset) {
+      for (var j = cum.length - 1; j >= 0; j--) {
+        if (cum[j] <= flatOffset) return { paraIndex: j, localOffset: flatOffset - cum[j] };
       }
-      
-      var startElement = startRange.getElement();
-      var startOffset = startRange.getStartOffset();
-      var startText = startElement.asText();
-      var fullText = startText.getText();
-      
-      // Extract condition from the text
-      var conditionMatch = fullText.match(/<<If:\s*([^>]+)>>/i);
-      if (!conditionMatch) {
-        Logger.log("  Could not parse condition, removing marker");
-        startText.deleteText(startRange.getStartOffset(), startRange.getEndOffsetInclusive());
-        blocksProcessed++;
-        continue;
-      }
-      
-      var condition = conditionMatch[1].trim();
-      Logger.log("  Found block with condition: '" + condition + "'");
-      
-      // Find the matching <<EndIf>>
-      var endRange = body.findText("<<EndIf>>", startRange);
-      if (!endRange) {
-        Logger.log("  No matching <<EndIf>> found, removing marker");
-        startText.deleteText(startRange.getStartOffset(), startRange.getEndOffsetInclusive());
-        blocksProcessed++;
-        continue;
-      }
-      
-      var endElement = endRange.getElement();
-      var endOffset = endRange.getStartOffset();
-      var endText = endElement.asText();
-      
-      // Evaluate the condition
+      return { paraIndex: 0, localOffset: flatOffset };
+    }
+
+    var blockRegex = /<<If:\s*([^>]+)>>([\s\S]*?)<<EndIf>>/gi;
+    var blocks = [];
+    var match;
+    while ((match = blockRegex.exec(fullText)) !== null) {
+      var startFlat = match.index;
+      blocks.push({
+        startFlat: startFlat,
+        endFlat: startFlat + match[0].length,
+        ifTagEndFlat: startFlat + match[0].indexOf('>>') + 2,
+        endIfTagStartFlat: startFlat + match[0].lastIndexOf('<<EndIf>>'),
+        condition: match[1].trim()
+      });
+    }
+    Logger.log("  Found " + blocks.length + " blocks");
+
+    var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
+
+    for (var b = blocks.length - 1; b >= 0; b--) {
+      var blk = blocks[b];
       var conditionMet = false;
-      var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
-      var cMatch = cRegex.exec(condition);
-      
+      var cMatch = cRegex.exec(blk.condition);
+
       if (cMatch) {
         var leftSide = cMatch[1].trim();
         var operator = cMatch[2].trim();
         var targetValue = cMatch[3].trim();
-        Logger.log("    Parsed: leftSide='" + leftSide + "', operator='" + operator + "', targetValue='" + targetValue + "'");
-        conditionMet = evaluateCondition(leftSide, operator, targetValue);
-        Logger.log("    Result: " + conditionMet);
+
+        var liveValue = leftSide;
+        if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
+          var varName = leftSide.slice(1, -1);
+          liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
+        }
+
+        conditionMet = evaluateCondition(liveValue, operator, targetValue);
       } else {
-        // Try simple equality
-        var eqIndex = condition.indexOf("==");
+        var eqIndex = blk.condition.indexOf("==");
         if (eqIndex !== -1) {
-          var leftPart = condition.substring(0, eqIndex).trim();
-          var rightPart = condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
-          conditionMet = (String(leftPart).trim() === String(rightPart).trim());
-          Logger.log("    Simple result: " + conditionMet);
+          var leftPart = blk.condition.substring(0, eqIndex).trim();
+          var rightPart = blk.condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
+          conditionMet = (leftPart === rightPart);
         }
       }
-      
+      Logger.log("  Block: '" + blk.condition + "' -> " + conditionMet);
+
       if (conditionMet) {
-
-  Logger.log("    ✅ TRUE - Keeping content, removing markers");
-
-  // -------------------------
-  // Remove <<If: ...>>
-  // -------------------------
-  var startMarker = fullText.match(/<<If:\s*[^>]+>>/)[0];
-
-  startText.deleteText(
-    startRange.getStartOffset(),
-    startRange.getStartOffset() + startMarker.length - 1
-  );
-
-  // If the paragraph now contains nothing, delete the paragraph
-  if (startText.getText().trim() === "") {
-    startElement.getParent().removeFromParent();
-  }
-
-  // -------------------------
-  // Remove <<EndIf>>
-  // -------------------------
-
-  // Re-find EndIf because document structure may have changed
-  endRange = body.findText("<<EndIf>>");
-
-  if (endRange) {
-
-    endElement = endRange.getElement();
-    endText = endElement.asText();
-
-    endText.deleteText(
-      endRange.getStartOffset(),
-      endRange.getEndOffsetInclusive()
-    );
-
-    // If EndIf paragraph is now empty, delete it
-    if (endText.getText().trim() === "") {
-      endElement.getParent().removeFromParent();
+        removeFlatRange(paragraphs, blk.endIfTagStartFlat, blk.endIfTagStartFlat + "<<EndIf>>".length, locate);
+        removeFlatRange(paragraphs, blk.startFlat, blk.ifTagEndFlat, locate);
+      } else {
+        removeFlatRange(paragraphs, blk.startFlat, blk.endFlat, locate);
+      }
     }
-  }
 
-}
-      
-      blocksProcessed++;
+    // FINAL: substitute remaining {VARIABLES} using the sheet's own display text
+    Logger.log("📋 Replacing display variables...");
+    var dispMap = displayDataMap || {};
+    for (var key in rowDataMap) {
+      var placeholder = "{" + key + "}";
+      var replacementValue = dispMap.hasOwnProperty(key) ? dispMap[key] : String(rowDataMap[key] || "");
+      body.replaceText(escapeRegexString(placeholder), replacementValue);
     }
-    
-    Logger.log("✅ processConditionalBlocks: Completed, processed " + blocksProcessed + " blocks");
-    
+
+    Logger.log("✅ processConditionalBlocks: Completed");
+
   } catch (err) {
     Logger.log("❌ Error in processConditionalBlocks: " + err.toString());
+  }
+}
+
+/**
+ * White space handling
+ * FIXED: Properly handles blank white sapces leftover
+ */
+
+function removeFlatRange(paragraphs, flatStart, flatEnd, locate) {
+  var startLoc = locate(flatStart);
+  var endLoc = locate(flatEnd);
+  var startPara = startLoc.paraIndex;
+  var endPara = endLoc.paraIndex;
+
+  if (startPara === endPara) {
+    var pText = paragraphs[startPara].editAsText();
+    var localStart = startLoc.localOffset;
+    var localEnd = endLoc.localOffset - 1;
+    if (localEnd >= localStart && pText.getText().length > 0) {
+      pText.deleteText(localStart, Math.min(localEnd, pText.getText().length - 1));
+    }
+    if (pText.getText().trim() === "") {
+      try { paragraphs[startPara].removeFromParent(); } catch (e) { /* already gone or last paragraph */ }
+    }
+  } else {
+    var pStart = paragraphs[startPara];
+    var pStartText = pStart.editAsText();
+    if (pStartText.getText().length > 0 && startLoc.localOffset <= pStartText.getText().length - 1) {
+      pStartText.deleteText(startLoc.localOffset, pStartText.getText().length - 1);
+    }
+
+    var pEnd = paragraphs[endPara];
+    var pEndText = pEnd.editAsText();
+    var localEndOffset = endLoc.localOffset - 1;
+    if (localEndOffset >= 0 && pEndText.getText().length > 0) {
+      pEndText.deleteText(0, Math.min(localEndOffset, pEndText.getText().length - 1));
+    }
+
+    for (var k = endPara - 1; k > startPara; k--) {
+      try { paragraphs[k].removeFromParent(); } catch (e) { /* already gone */ }
+    }
+    try { if (pStart.editAsText().getText().trim() === "") pStart.removeFromParent(); } catch (e) {}
+    try { if (pEnd.editAsText().getText().trim() === "") pEnd.removeFromParent(); } catch (e) {}
   }
 }
 
@@ -1215,103 +1231,83 @@ function processConditionalBlocks(body, rowDataMap) {
  * Process conditional table rows - <<RowIf: ... >> 
  * FIXED: Properly handles both TRUE and FALSE conditions in tables
  */
-function processConditionalTableRows(body, rowDataMap) {
+function processConditionalTableRows(body, rowDataMap, displayDataMap) {
   try {
-    Logger.log("🔍 processConditionalTableRows: Starting safe table processing");
+    Logger.log("🔍 processConditionalTableRows: Starting...");
     var tables = body.getTables();
-    
     if (tables.length === 0) {
       Logger.log("  No tables found, skipping");
       return;
     }
-    
-    Logger.log("📋 Found " + tables.length + " tables");
-    
+
+    var dispMap = displayDataMap || {};
+    var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
+
     for (var t = 0; t < tables.length; t++) {
       var table = tables[t];
-      Logger.log("  Table " + (t + 1));
-      
-      // Step 1: Replace variables in table cells
-      Logger.log("    Replacing variables in table cells...");
-      for (var key in rowDataMap) {
-        var placeholder = "{" + key + "}";
-        var replacementValue = String(rowDataMap[key] || "");
-        table.replaceText(escapeRegexString(placeholder), replacementValue);
-      }
-      
-      // Step 2: Row-level condition logic
       var rowsToRemove = [];
       var numRows = table.getNumRows();
-      Logger.log("    Table has " + numRows + " rows");
-      
+      Logger.log("  Table has " + numRows + " rows");
+
       for (var r = 0; r < numRows; r++) {
         var row = table.getRow(r);
         var rowText = row.getText();
-        Logger.log("    Row " + (r + 1) + " text: " + rowText);
-        
         var match = rowText.match(/<<RowIf:\s*([^>]+)>>/i);
-        
+
         if (match) {
           var condition = match[1].trim();
-          Logger.log("    Row " + (r + 1) + " has condition: '" + condition + "'");
-          
           var conditionMet = false;
-          var cRegex = /^\s*([^=!><]+?)\s*([=!><]=?|contains)\s*['"“]([^'"”']+)['"”']\s*$/i;
           var cMatch = cRegex.exec(condition);
-          
+
           if (cMatch) {
             var leftSide = cMatch[1].trim();
             var operator = cMatch[2].trim();
             var targetValue = cMatch[3].trim();
-            Logger.log("      Parsed: leftSide='" + leftSide + "', operator='" + operator + "', targetValue='" + targetValue + "'");
-            conditionMet = evaluateCondition(leftSide, operator, targetValue);
-            Logger.log("      Result: " + conditionMet);
-          } else {
-            // Try simple equality
-            var eqIndex = condition.indexOf("==");
-            if (eqIndex !== -1) {
-              var leftPart = condition.substring(0, eqIndex).trim();
-              var rightPart = condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
-              conditionMet = (String(leftPart).trim() === String(rightPart).trim());
-              Logger.log("      Simple result: " + conditionMet);
+
+            var liveValue = leftSide;
+            if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
+              var varName = leftSide.slice(1, -1);
+              liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
             }
+            conditionMet = evaluateCondition(liveValue, operator, targetValue);
           }
-          
+
           if (!conditionMet) {
-            // FALSE: Remove the entire row
             rowsToRemove.push(r);
             Logger.log("    Row " + (r + 1) + " marked for REMOVAL (condition FALSE)");
           } else {
-            // TRUE: Remove the <<RowIf: ... >> tag from all cells
             Logger.log("    Row " + (r + 1) + " marked to KEEP - removing tag");
             var numCells = row.getNumCells();
             for (var c = 0; c < numCells; c++) {
               var cell = row.getCell(c);
               var cellText = cell.getText();
               var cleanedText = cellText.replace(/<<RowIf:\s*[^>]+>>/i, '').trim();
-              if (cleanedText !== cellText) {
-                cell.setText(cleanedText);
-                Logger.log("      Removed tag from cell " + (c + 1));
-              }
+              if (cleanedText !== cellText) cell.setText(cleanedText);
             }
           }
         }
       }
-      
-      // Remove rows from bottom to top to maintain index integrity
-      rowsToRemove.sort(function(a, b) { return b - a; });
+
+      rowsToRemove.sort(function (a, b) { return b - a; });
       for (var i = 0; i < rowsToRemove.length; i++) {
         table.removeRow(rowsToRemove[i]);
-        Logger.log("  Removed row " + (rowsToRemove[i] + 1));
+      }
+
+      // Substitute remaining {VARIABLES} in surviving rows using display text
+      for (var key in rowDataMap) {
+        var placeholder = "{" + key + "}";
+        var replacementValue = dispMap.hasOwnProperty(key) ? dispMap[key] : String(rowDataMap[key] || "");
+        table.replaceText(escapeRegexString(placeholder), replacementValue);
       }
     }
-    
+
     Logger.log("✅ processConditionalTableRows: Completed");
-    
+
   } catch (err) {
     Logger.log("❌ Error in processConditionalTableRows: " + err.toString());
   }
 }
+
 
 
 /**

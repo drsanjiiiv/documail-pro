@@ -22,6 +22,7 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
+       overflow: hidden;  /* ADD THIS */
     }
 
     .sidebar-header {
@@ -45,11 +46,14 @@
     }
 
     .templates-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-      background: #f8f9fa;
-    }
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #f8f9fa;
+  /* Remove the flex: 1 and add height calculation */
+  height: calc(100% - 76px);  /* Subtract footer height */
+  padding-bottom: 80px;  /* Extra space at bottom so content doesn't hide behind button */
+}
 
     .template-card {
       background: #ffffff;
@@ -130,14 +134,22 @@
     }
 
     .btn-run {
-      background: #137333;
-      color: white;
-      border: none;
-    }
+  background: #1a73e8;
+  color: white;
+  border: none;
+}
 
-    .btn-run:hover {
-      background: #0f5d29;
-    }
+.btn-run:hover {
+  background: #04fbbc;
+  color: #1a73e8;
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-run:active {
+  transform: scale(0.97);
+  background: #e6a800;
+}
 
     .btn-delete {
       background: #ffffff;
@@ -165,36 +177,48 @@
     }
 
     .sidebar-footer {
-      padding: 16px;
-      border-top: 1px solid #e8eaed;
-      background: #ffffff;
-      flex-shrink: 0;
-    }
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  border-top: 1px solid #e8eaed;
+  background: #ffffff;
+  height: 76px;  /* Fixed height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 
     .new-template-btn {
-      width: 100%;
-      padding: 12px;
-      background: #1a73e8;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
+  width: 100%;
+  padding: 12px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 
-    .new-template-btn:hover {
-      background: #1557b0;
-    }
+.new-template-btn:hover {
+  background: #04fbbc;
+  color: #1a73e8;
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
 
-    .templates-container::-webkit-scrollbar {
-      width: 6px;
-    }
+.new-template-btn:active {
+  transform: scale(0.97);
+  background: #e6a800;
+}
 
     .templates-container::-webkit-scrollbar-track {
       background: #f1f1f1;

@@ -359,24 +359,46 @@ function CHECK_TEMPLATE_RECORDS(templateId) {
 
     if (lastColumn > 0) {
       var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-      var statusColumnName = ("Sent Mail Status - " + targetTemplate.name).toLowerCase().trim();
-      var targetColIndex = -1;
 
-      for (var c = 0; c < headers.length; c++) {
-        if (String(headers[c]).toLowerCase().trim() === statusColumnName) {
-          targetColIndex = c + 1;
-          break;
+      // Check Sent Mail Status column (for EMAIL_ONLY and BOTH)
+      if (targetTemplate.type === "EMAIL_ONLY" || targetTemplate.type === "BOTH") {
+        var statusColumnName = ("Sent Mail Status - " + targetTemplate.name).toLowerCase().trim();
+        var targetColIndex = -1;
+
+        for (var c = 0; c < headers.length; c++) {
+          if (String(headers[c]).toLowerCase().trim() === statusColumnName) {
+            targetColIndex = c + 1;
+            break;
+          }
+        }
+
+        if (targetColIndex !== -1) {
+          var lastRow = sheet.getLastRow();
+          if (lastRow > 1) {
+            var dataRange = sheet.getRange(2, targetColIndex, lastRow - 1, 1).getValues();
+            for (var r = 0; r < dataRange.length; r++) {
+              if (String(dataRange[r][0]).trim() !== "") {
+                return { hasRecords: true };
+              }
+            }
+          }
         }
       }
 
-      if (targetColIndex !== -1) {
-        var lastRow = sheet.getLastRow();
-        if (lastRow > 1) {
-          var dataRange = sheet.getRange(2, targetColIndex, lastRow - 1, 1).getValues();
-          for (var r = 0; r < dataRange.length; r++) {
-            if (String(dataRange[r][0]).trim() !== "") {
-              return { hasRecords: true }; // Data found!
+      // Check Merged Doc Status column (for PDF_ONLY and BOTH)
+      if (targetTemplate.type === "PDF_ONLY" || targetTemplate.type === "BOTH") {
+        for (var c = 0; c < headers.length; c++) {
+          if (String(headers[c]).toLowerCase().indexOf("merged doc status") !== -1) {
+            var lastRow = sheet.getLastRow();
+            if (lastRow > 1) {
+              var dataRange = sheet.getRange(2, c + 1, lastRow - 1, 1).getValues();
+              for (var r = 0; r < dataRange.length; r++) {
+                if (String(dataRange[r][0]).trim() !== "") {
+                  return { hasRecords: true };
+                }
+              }
             }
+            break;
           }
         }
       }
@@ -385,5 +407,5 @@ function CHECK_TEMPLATE_RECORDS(templateId) {
     console.log("Error checking template rows: " + e.message);
   }
 
-  return { hasRecords: false }; // Safe (empty)
+  return { hasRecords: false };
 }

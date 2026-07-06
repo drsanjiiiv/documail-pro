@@ -24,13 +24,48 @@ function evaluateCondition(varValue, operator, targetValue) {
     var numCriteria = parseFloat(criteriaVal);
     
     switch (operator) {
-      case '==': return numCurrent === numCriteria;
-      case '!=': return numCurrent !== numCriteria;
-      case '>=': return numCurrent >= numCriteria;
-      case '<=': return numCurrent <= numCriteria;
-      case 'contains': return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
-      default: return false;
-    }
+
+  case '==':
+  case '=':
+    return currentVal.toLowerCase() === criteriaVal.toLowerCase();
+
+  case '!=':
+  case '<>':
+    return currentVal.toLowerCase() !== criteriaVal.toLowerCase();
+
+  case '>':
+    return currentVal.toLowerCase() > criteriaVal.toLowerCase();
+
+  case '<':
+    return currentVal.toLowerCase() < criteriaVal.toLowerCase();
+
+  case '>=':
+    return currentVal.toLowerCase() >= criteriaVal.toLowerCase();
+
+  case '<=':
+    return currentVal.toLowerCase() <= criteriaVal.toLowerCase();
+
+  case 'contains':
+    return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) !== -1;
+
+  case 'notcontains':
+    return currentVal.toLowerCase().indexOf(criteriaVal.toLowerCase()) === -1;
+
+  case 'startswith':
+    return currentVal.toLowerCase().startsWith(criteriaVal.toLowerCase());
+
+  case 'endswith':
+    return currentVal.toLowerCase().endsWith(criteriaVal.toLowerCase());
+
+  case 'empty':
+    return currentVal === "";
+
+  case 'notempty':
+    return currentVal !== "";
+
+  default:
+    return false;
+}
   }
 
   // Fallback to strict string comparisons if evaluating textual data fields (e.g. "Pass" vs "Fail")

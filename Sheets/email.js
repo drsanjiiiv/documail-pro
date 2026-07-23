@@ -21,6 +21,7 @@ function executeEmailSend(selectedRows, emailConfig, templateName, tagMappings) 
   var statusColIdx = GET_OR_CREATE_STATUS_COLUMN(sheet, templateName);
 
   var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
+  var displayData = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getDisplayValues();
   var sent = 0;
   var errors = [];
   
@@ -65,7 +66,7 @@ function executeEmailSend(selectedRows, emailConfig, templateName, tagMappings) 
             if (rawValue instanceof Date) {
               val = FORMAT_DATE_FOR_DISPLAY(rawValue);
             } else if (typeof rawValue === 'number') {
-              val = FORMAT_NUMBER_FOR_DISPLAY(rawValue); // Evaluates custom formatting schemas!
+              val = displayData[i][headerIdx] || FORMAT_NUMBER_FOR_DISPLAY(rawValue);
             } else {
               val = String(rawValue || "");
             }
@@ -86,7 +87,7 @@ function executeEmailSend(selectedRows, emailConfig, templateName, tagMappings) 
           if (rawValue instanceof Date) {
             val = FORMAT_DATE_FOR_DISPLAY(rawValue);
           } else if (typeof rawValue === 'number') {
-            val = FORMAT_NUMBER_FOR_DISPLAY(rawValue);
+            val = displayData[i][h] || FORMAT_NUMBER_FOR_DISPLAY(rawValue);
           } else {
             val = String(rawValue || "");
           }
@@ -144,6 +145,7 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName, ta
     }
 
     var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getValues();
+    var displayData = sheet.getRange(2, 1, sheet.getLastRow() - 1, allHeaders.length).getDisplayValues();
     var sent = 0;
     var errors = [];
 
@@ -168,13 +170,14 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName, ta
               var headerIdx = allHeaders.indexOf(targetHeader);
               
               if (headerIdx !== -1) {
-                var val = data[i][headerIdx];
-                if (val instanceof Date) {
-                  val = FORMAT_DATE_FOR_DISPLAY(val);
-                } else if (typeof val === 'number') {
-                  val = FORMAT_NUMBER_FOR_DISPLAY(val);
+                var rawVal = data[i][headerIdx];
+                var val;
+                if (rawVal instanceof Date) {
+                  val = FORMAT_DATE_FOR_DISPLAY(rawVal);
+                } else if (typeof rawVal === 'number') {
+                  val = displayData[i][headerIdx] || FORMAT_NUMBER_FOR_DISPLAY(rawVal);
                 } else {
-                  val = String(val || "");
+                  val = String(rawVal || "");
                 }
                 var regex = new RegExp("\\{" + escapeRegex(docTag) + "\\}", "g");
                 subject = subject.replace(regex, val);
@@ -186,13 +189,14 @@ function executeEmailSendWithAttachments(emailConfig, folderId, templateName, ta
           for (var h = 0; h < allHeaders.length; h++) {
               var header = allHeaders[h];
               if (header) {
-                  var val = data[i][h];
-                  if (val instanceof Date) {
-                      val = FORMAT_DATE_FOR_DISPLAY(val);
-                  } else if (typeof val === 'number') {
-                      val = FORMAT_NUMBER_FOR_DISPLAY(val);
+                  var rawVal = data[i][h];
+                  var val;
+                  if (rawVal instanceof Date) {
+                      val = FORMAT_DATE_FOR_DISPLAY(rawVal);
+                  } else if (typeof rawVal === 'number') {
+                      val = displayData[i][h] || FORMAT_NUMBER_FOR_DISPLAY(rawVal);
                   } else {
-                      val = String(val || "");
+                      val = String(rawVal || "");
                   }
                   var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
                   subject = subject.replace(regex, val);

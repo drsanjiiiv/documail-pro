@@ -332,17 +332,27 @@ function EXECUTE_DOCUMENT_MERGE_ENGINE_FOR_SINGLE_ROW(payload, singleRowData, ro
     // ======================================================================
     // 🔥 INJECTION: PROCESS CONDITIONALS BEFORE SWAPPING RAW TAGS
     // ======================================================================
+    var rowDataMap = {};
+    var displayDataMap = {};
+    for (var h = 0; h < allHeaders.length; h++) {
+      rowDataMap[allHeaders[h]] = rowData[h];
+      displayDataMap[allHeaders[h]] = singleRowDisplayData ? singleRowDisplayData[h] : String(rowData[h] || "");
+    }
+
+    // STEP 1: Process table rows FIRST (before processConditionalBlocks replaces {VARIABLES})
+    if (typeof processConditionalTableRows === 'function') {
+      Logger.log("📋 Processing table rows first...");
+      processConditionalTableRows(body, rowDataMap, displayDataMap);
+    } else {
+      Logger.log("⚠️ processConditionalTableRows NOT found!");
+    }
+
+    // STEP 2: Process paragraph blocks
     if (typeof processConditionalBlocks === 'function') {
-      var rowDataMap = {};
-      var displayDataMap = {};
-      for (var h = 0; h < allHeaders.length; h++) {
-        rowDataMap[allHeaders[h]] = rowData[h];
-        displayDataMap[allHeaders[h]] = singleRowDisplayData ? singleRowDisplayData[h] : String(rowData[h] || "");
-      }
+      Logger.log("📋 Processing paragraph blocks...");
       processConditionalBlocks(body, rowDataMap, displayDataMap);
-      if (typeof processConditionalTableRows === 'function') {
-        processConditionalTableRows(body, rowDataMap, displayDataMap);
-      }
+    } else {
+      Logger.log("⚠️ processConditionalBlocks NOT found!");
     }
     // ======================================================================
 
@@ -850,13 +860,14 @@ function RUN_TEMPLATE(templateId) {
       for (var h = 0; h < allHeaders.length; h++) {
         var header = allHeaders[h];
         if (header) {
-          var val = data[i][h];
-          if (val instanceof Date) {
-            val = FORMAT_DATE_FOR_DISPLAY(val);
-          } else if (typeof val === 'number') {
-            val = FORMAT_NUMBER_FOR_DISPLAY(val);
+          var rawVal = data[i][h];
+          var val;
+          if (rawVal instanceof Date) {
+            val = FORMAT_DATE_FOR_DISPLAY(rawVal);
+          } else if (typeof rawVal === 'number') {
+            val = displayData[i][h] || FORMAT_NUMBER_FOR_DISPLAY(rawVal);
           } else {
-            val = String(val || "");
+            val = String(rawVal || "");
           }
           var regex = new RegExp("\\{" + escapeRegex(header) + "\\}", "g");
           subject = subject.replace(regex, val);
@@ -1057,12 +1068,16 @@ function GET_RECORDS_PREVIEW_PAYLOAD_WITH_TEMPLATE(templateName) {
 function evaluateCondition(varValue, operator, targetValue) {
   var currentVal = varValue !== undefined && varValue !== null ? String(varValue).trim() : "";
   var criteriaVal = targetValue !== undefined && targetValue !== null ? String(targetValue).trim() : "";
-  var currentValClean = currentVal.replace(/[^0-9.\-]/g, "");
-  var criteriaValClean = criteriaVal.replace(/[^0-9.\-]/g, "");
-  var isNumeric = currentValClean !== "" && criteriaValClean !== "" && !isNaN(currentValClean) && !isNaN(criteriaValClean);
   operator = operator.toLowerCase().trim();
 
   Logger.log("  evaluateCondition: currentVal='" + currentVal + "', operator='" + operator + "', criteriaVal='" + criteriaVal + "'");
+
+  if (operator === 'empty') return currentVal === "";
+  if (operator === 'notempty') return currentVal !== "";
+
+  var currentValClean = currentVal.replace(/[^0-9.\-]/g, "");
+  var criteriaValClean = criteriaVal.replace(/[^0-9.\-]/g, "");
+  var isNumeric = currentValClean !== "" && criteriaValClean !== "" && !isNaN(currentValClean) && !isNaN(criteriaValClean);
 
   if (isNumeric) {
     var numCurrent = parseFloat(currentValClean);
@@ -1136,26 +1151,35 @@ function processConditionalBlocks(body, rowDataMap, displayDataMap) {
     for (var b = blocks.length - 1; b >= 0; b--) {
       var blk = blocks[b];
       var conditionMet = false;
-      var cMatch = cRegex.exec(blk.condition);
 
-      if (cMatch) {
-        var leftSide = cMatch[1].trim();
-        var operator = cMatch[2].trim();
-        var targetValue = cMatch[3].trim();
-
-        var liveValue = leftSide;
-        if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
-          var varName = leftSide.slice(1, -1);
-          liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
-        }
-
-        conditionMet = evaluateCondition(liveValue, operator, targetValue);
+      var emptyMatch = blk.condition.match(/^\s*\{([^}]+)\}\s+(empty|notempty)\s*$/i);
+      if (emptyMatch) {
+        var varName = emptyMatch[1];
+        var operator = emptyMatch[2].toLowerCase();
+        var liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : "";
+        conditionMet = evaluateCondition(liveValue, operator, "");
       } else {
-        var eqIndex = blk.condition.indexOf("==");
-        if (eqIndex !== -1) {
-          var leftPart = blk.condition.substring(0, eqIndex).trim();
-          var rightPart = blk.condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
-          conditionMet = (leftPart === rightPart);
+        var cMatch = cRegex.exec(blk.condition);
+
+        if (cMatch) {
+          var leftSide = cMatch[1].trim();
+          var operator = cMatch[2].trim();
+          var targetValue = cMatch[3].trim();
+
+          var liveValue = leftSide;
+          if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
+            var varName = leftSide.slice(1, -1);
+            liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
+          }
+
+          conditionMet = evaluateCondition(liveValue, operator, targetValue);
+        } else {
+          var eqIndex = blk.condition.indexOf("==");
+          if (eqIndex !== -1) {
+            var leftPart = blk.condition.substring(0, eqIndex).trim();
+            var rightPart = blk.condition.substring(eqIndex + 2).trim().replace(/['"“”']/g, '');
+            conditionMet = (leftPart === rightPart);
+          }
         }
       }
       Logger.log("  Block: '" + blk.condition + "' -> " + conditionMet);
@@ -1257,19 +1281,28 @@ function processConditionalTableRows(body, rowDataMap, displayDataMap) {
         if (match) {
           var condition = match[1].trim();
           var conditionMet = false;
-          var cMatch = cRegex.exec(condition);
 
-          if (cMatch) {
-            var leftSide = cMatch[1].trim();
-            var operator = cMatch[2].trim();
-            var targetValue = cMatch[3].trim();
+          var emptyMatch = condition.match(/^\s*\{([^}]+)\}\s+(empty|notempty)\s*$/i);
+          if (emptyMatch) {
+            var varName = emptyMatch[1];
+            var operator = emptyMatch[2].toLowerCase();
+            var liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : "";
+            conditionMet = evaluateCondition(liveValue, operator, "");
+          } else {
+            var cMatch = cRegex.exec(condition);
 
-            var liveValue = leftSide;
-            if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
-              var varName = leftSide.slice(1, -1);
-              liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
+            if (cMatch) {
+              var leftSide = cMatch[1].trim();
+              var operator = cMatch[2].trim();
+              var targetValue = cMatch[3].trim();
+
+              var liveValue = leftSide;
+              if (leftSide.charAt(0) === '{' && leftSide.charAt(leftSide.length - 1) === '}') {
+                var varName = leftSide.slice(1, -1);
+                liveValue = rowDataMap.hasOwnProperty(varName) ? rowDataMap[varName] : leftSide;
+              }
+              conditionMet = evaluateCondition(liveValue, operator, targetValue);
             }
-            conditionMet = evaluateCondition(liveValue, operator, targetValue);
           }
 
           if (!conditionMet) {

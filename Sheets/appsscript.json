@@ -1,27 +1,15 @@
 {
   "timeZone": "Asia/Kolkata",
   "dependencies": {
-    "enabledAdvancedServices": [
-      {
-        "userSymbol": "Drive",
-        "serviceId": "drive",
-        "version": "v2"
-      }
-    ]
+    "enabledAdvancedServices": [{
+      "userSymbol": "Drive",
+      "serviceId": "drive",
+      "version": "v2"
+    }]
   },
   "exceptionLogging": "CLOUD",
+  "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/script.send_mail", "https://www.googleapis.com/auth/script.triggers", "https://www.googleapis.com/auth/script.container.ui", "https://www.googleapis.com/auth/userinfo.email"],
   "runtimeVersion": "V8",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/script.send_mail",
-    "https://www.googleapis.com/auth/script.triggers",
-    "https://www.googleapis.com/auth/script.container.ui",
-    "https://www.googleapis.com/auth/userinfo.email"
-  ],
   "addOns": {
     "common": {
       "name": "DocuMail Pro",

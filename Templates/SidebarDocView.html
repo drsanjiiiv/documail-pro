@@ -74,6 +74,7 @@
       <div class="form-group">
         <label>Please choose a variable</label>
         <select id="smart-dropdown" class="header-dropdown"></select>
+        <p style="font-size: 11px; color: #5f6368; margin: 4px 0 0 0;">💡 Use in a paragraph or table row</p>
       </div>
 
       <label>Display this only when...</label>
@@ -135,8 +136,21 @@
   </div>
 
   <script>
+    function showError(err) {
+      document.getElementById('main-panel').innerHTML =
+        '<div class="card" style="text-align:center;">' +
+        '<h3 style="color:#c5221f;">❌ Connection Error</h3>' +
+        '<p style="font-size:12px;color:#5f6368;">' + err.message + '</p>' +
+        '<p style="font-size:11px;color:#9aa0a6;margin-top:12px;">' +
+        'Make sure this template was created from a sheet via "Create Dynamic Doc Template From Sheet".</p>' +
+        '</div>';
+    }
+
     // Populate dropdowns (Assume getSheetHeaders is available)
-    window.onload = () => google.script.run.withSuccessHandler(populateDropdowns).getSheetHeaders();
+    window.onload = () => google.script.run
+      .withSuccessHandler(populateDropdowns)
+      .withFailureHandler(showError)
+      .getSheetHeaders();
 
     function populateDropdowns(headers) {
       const selects = document.querySelectorAll('select.header-dropdown');
@@ -217,9 +231,24 @@ function handleSmartInsert() {
     content = "";
   }
 
+  var insertSuccess = function(res) {
+    if (res && res.success) {
+      google.script.run
+        .withFailureHandler(function(e) {})
+        .showToast('✅ Variable inserted!');
+    }
+  };
+
+  var insertFail = function(err) {
+    alert('Error inserting variable: ' + err.message);
+  };
+
   if (!isConditional) {
     // Simple variable insertion
-    google.script.run.injectTagAtCursor(`{${variable}}`, '');
+    google.script.run
+      .withSuccessHandler(insertSuccess)
+      .withFailureHandler(insertFail)
+      .injectTagAtCursor(`{${variable}}`, '');
   } else {
     const targetType = document.querySelector('input[name="target-type"]:checked').value;
     const op = document.getElementById('cond-operator').value;
@@ -232,26 +261,27 @@ function handleSmartInsert() {
     let opening, closing;
 
     if (targetType === 'paragraph') {
-      // For paragraph: opening tag, content, closing tag
       if (op === "empty" || op === "notempty") {
         opening = `<<If: {${variable}} ${op}>>`;
       } else {
         opening = `<<If: {${variable}} ${op} '${val}'>>`;
       }
       closing = '<<EndIf>>';
-      // Pass content separately
-      google.script.run.injectTagAtCursor(opening, closing, content);
+      google.script.run
+        .withSuccessHandler(insertSuccess)
+        .withFailureHandler(insertFail)
+        .injectTagAtCursor(opening, closing, content);
     } else {
-      // For Table Row: content is included in the opening tag
-      // This way it's all in one line: <<RowIf: ...>>content
       if (op === "empty" || op === "notempty") {
         opening = `<<RowIf: {${variable}} ${op}>>${content}`;
       } else {
         opening = `<<RowIf: {${variable}} ${op} '${val}'>>${content}`;
       }
       closing = '';
-      // Pass empty content since it's already in opening tag
-      google.script.run.injectTagAtCursor(opening, closing, '');
+      google.script.run
+        .withSuccessHandler(insertSuccess)
+        .withFailureHandler(insertFail)
+        .injectTagAtCursor(opening, closing, '');
     }
   }
 }

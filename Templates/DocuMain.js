@@ -98,9 +98,13 @@ function INITIALIZE_DOC_DESIGNER_SIDEBAR() {
       }
     }
 
-    // 4. Wipe the canvas completely clean
-    body.clear();
-    body.appendParagraph(""); // Google Docs require at least one structural paragraph element
+    // 4. Wipe the canvas completely clean (keep last paragraph to avoid section error)
+    var pars = body.getParagraphs();
+    while (pars.length > 1) {
+      body.removeChild(pars[0]);
+      pars = body.getParagraphs();
+    }
+    pars[0].setText(" ");
 
     // 5. Evaluate and render the HTML sidebar panel
     var htmlOutput = HtmlService.createTemplateFromFile('SidebarDocView')
@@ -179,10 +183,27 @@ function injectTagAtCursor(openingTag, closingTag, content) {
     }
 
     var closeStr = closingTag ? closingTag.trim() : "";
-    
+    var isContentEmpty = (content === undefined || content === null || content.toString().trim() === "");
+
+    // ============================================================
+    // EARLY RETURN: Simple variable insert (no tags, no content)
+    // ============================================================
+    if (closeStr === "" && isContentEmpty) {
+      var simpleText = parentParagraph.appendText(openingTag);
+      simpleText.setForegroundColor(defaultForegroundColor);
+      simpleText.setFontSize(defaultFontSize);
+      simpleText.setFontFamily(defaultFontFamily);
+      simpleText.setItalic(false);
+      simpleText.setBold(false);
+      simpleText.setUnderline(false);
+      var cursorPos = doc.newPosition(simpleText, simpleText.getText().length);
+      doc.setCursor(cursorPos);
+      return { success: true };
+    }
+
     // Determine what content to insert
     var contentToInsert;
-    if (content !== undefined && content !== null && content.trim() !== "") {
+    if (content !== undefined && content !== null && content.toString().trim() !== "") {
       contentToInsert = content;
     } else {
       contentToInsert = "[ Enter your conditional template content here ]";
@@ -312,4 +333,15 @@ function styleLogicTags() {
       found = body.findText(tag, found);
     }
   });
+}
+
+// ======================================================================
+// 📢 Toast notification for sidebar feedback
+// ======================================================================
+function showToast(message) {
+  try {
+    DocumentApp.getActiveDocument().toast(message, "DocuMail Pro", 3);
+  } catch (e) {
+    Logger.log("Toast error: " + e.toString());
+  }
 }

@@ -9,19 +9,39 @@
 // ==========================================
 // FUNCTION: GENERATE_DOCUMAIL_TEMPLATE Starts
 // ==========================================
+function HAS_ACTUAL_DATA_ROWS(sheet) {
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol <= 0) return false;
+
+  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+  for (var r = 0; r < data.length; r++) {
+    for (var c = 0; c < data[r].length; c++) {
+      if (String(data[r][c]).trim() !== "") {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function GENERATE_DOCUMAIL_TEMPLATE() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
   var ui = SpreadsheetApp.getUi();
 
   // =======================================================
-  // SAFETY CHECK: Block if sheet has data rows
+  // SAFETY CHECK: Block if sheet has actual data rows
   // =======================================================
   var lastRow = sheet.getLastRow();
   var lastColumn = sheet.getLastColumn();
+  var actualData = lastRow > 1 ? HAS_ACTUAL_DATA_ROWS(sheet) : false;
 
-  // If there is data in rows (beyond header row)
-  if (lastRow > 1) {
+  if (lastRow > 1 && !actualData) {
+    console.log("⚠️ Found " + (lastRow - 1) + " rows with formulas but no visible data. Proceeding with initialization.");
+  }
+
+  if (actualData) {
     ui.alert(
       "❌ Cannot Initialize Sheet Template",
       "This sheet already has data in rows.\n\n" +
@@ -31,6 +51,29 @@ function GENERATE_DOCUMAIL_TEMPLATE() {
       ui.ButtonSet.OK
     );
     return;
+  }
+
+  // =======================================================
+  // SAFETY CHECK: Warn if system columns already exist
+  // =======================================================
+  if (lastColumn > 0) {
+    var existingHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    var hasSystemCols = false;
+    for (var i = 0; i < existingHeaders.length; i++) {
+      var h = String(existingHeaders[i]).toLowerCase().trim();
+      if (h.indexOf("merged doc status") !== -1 || h.indexOf("recipient email") !== -1) {
+        hasSystemCols = true;
+        break;
+      }
+    }
+    if (hasSystemCols) {
+      ui.alert(
+        "✅ DocuMail PRO Already Configured",
+        "This sheet is already configured with DocuMail PRO system columns.\n\nNo changes are needed.",
+        ui.ButtonSet.OK
+      );
+      return;
+    }
   }
 
   // ERASE ALL SAVED TEMPLATES ON INITIALIZATION

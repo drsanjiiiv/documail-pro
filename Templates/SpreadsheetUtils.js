@@ -11,7 +11,7 @@ function getSheetHeaders() {
     var sourceSheetId = docFile.getDescription();
     
     if (!sourceSheetId) {
-      throw new Error("No linked data sheet ID profile found in file configuration metadata.");
+      throw new Error("No linked sheet found. This template was not created from a DocuMail Pro sheet. Please use 'Create Dynamic Doc Template From Sheet' in your spreadsheet first.");
     }
     
     var ss = SpreadsheetApp.openById(sourceSheetId);

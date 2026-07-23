@@ -8,6 +8,34 @@
  */
 
 // ==========================================
+// MASTER TEMPLATE CONFIGURATION
+// ==========================================
+// Before publishing, set this to your "DocuMailPro Master Doc Template" file ID.
+// Share the doc with "Anyone with the link can view" so add-on users can access it.
+var MASTER_TEMPLATE_FILE_ID = '1RzrM1_w8M_MmtzKpKjeCoglnjHScEOFnZJHRHrBTuZE';
+
+function GET_MASTER_TEMPLATE_ID() {
+  var props = PropertiesService.getDocumentProperties();
+
+  // 1. Check PropertiesService first (user-set via menu or auto-detected)
+  var stored = props.getProperty('DOCUMAIL_MASTER_TEMPLATE_ID');
+  if (stored) return stored;
+
+  // 2. Check hardcoded constant (developer sets before publishing)
+  if (MASTER_TEMPLATE_FILE_ID) return MASTER_TEMPLATE_FILE_ID;
+
+  // 3. Fallback: search by name (backward compatible)
+  var files = DriveApp.getFilesByName("DocuMailPro Master Doc Template");
+  if (files.hasNext()) {
+    var file = files.next();
+    props.setProperty('DOCUMAIL_MASTER_TEMPLATE_ID', file.getId());
+    return file.getId();
+  }
+
+  return null;
+}
+
+// ==========================================
 // SPREADSHEET PLATFORM - ONOPEN (CLEAN)
 // ==========================================
 function onOpen() {
@@ -18,7 +46,8 @@ function onOpen() {
     .addItem('📝 Create Dynamic Doc Template From Sheet', 'CREATE_DOCUMENT_TEMPLATE_MENU')
     .addItem('🧠 Open Smart Template Engine', 'INITIALIZE_ADDON_SIDEBAR')
     .addSeparator()
-    .addItem('❓ Help', 'showSheetHelp')  // ADD THIS LINE
+    .addItem('⚙️ Set Master Template', 'SET_MASTER_TEMPLATE')
+    .addItem('❓ Help', 'showSheetHelp')
     .addToUi();
 }
 
@@ -274,15 +303,29 @@ function CREATE_DOCUMENT_TEMPLATE_MENU() {
     setTimeout(function() { updateStep(3, 'done'); }, 1200);
     setTimeout(function() { updateStep(4, 'done'); }, 1500);
     
+    // Open blank popup BEFORE async call (user gesture still active)
+    var templateWindow = window.open('', '_blank');
+    var popupBlocked = !templateWindow || templateWindow.closed;
+
     // Start the actual work in background
     google.script.run
       .withSuccessHandler(function(result) {
         if (result.success) {
-          // Step 6 done (launching)
           updateStep(5, 'done');
-          
-          // Open the template and close dialog
-          window.open(result.url, '_blank');
+
+          if (!popupBlocked && templateWindow && !templateWindow.closed) {
+            templateWindow.location.href = result.url;
+          } else {
+            document.getElementById('loader').innerHTML =
+              '<div style="text-align:center;padding:20px;font-family:sans-serif;">' +
+              '<h2 style="color:#137333;">✅ Template Created!</h2>' +
+              '<p style="color:#5f6368;margin:16px 0;">Click to open your template:</p>' +
+              '<a href="' + result.url + '" target="_blank" style="display:inline-block;padding:12px 32px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;">📄 Open Template</a>' +
+              '<p style="color:#9aa0a6;font-size:12px;margin-top:16px;">(Enable popups for auto-open next time)</p>' +
+              '</div>';
+            return;
+          }
+
           setTimeout(function() {
             google.script.host.close();
           }, 600);
@@ -343,13 +386,11 @@ function CREATE_TEMPLATE_IN_BACKGROUND(sheetName, sheetId) {
     }
 
     // 2. Locate the Master Template Document with the Scripts
-    var masterName = "DocuMailPro Master Doc Template";
-    var masterFiles = DriveApp.getFilesByName(masterName);
-    
-    if (!masterFiles.hasNext()) {
-      throw new Error("Could not find '" + masterName + "' in your Google Drive. Please ensure the master template file exists and is named precisely.");
+    var masterId = GET_MASTER_TEMPLATE_ID();
+    if (!masterId) {
+      throw new Error("Master template not found. Go to DocuMail Pro Sheet → ⚙️ Set Master Template to configure it.");
     }
-    var masterFile = masterFiles.next();
+    var masterFile = DriveApp.getFileById(masterId);
 
     // 3. Clone the Master File
     var docFile = masterFile.makeCopy("DocTemplate for " + sheetName, templateFolder);
@@ -366,7 +407,7 @@ function CREATE_TEMPLATE_IN_BACKGROUND(sheetName, sheetId) {
     var titleParagraph = body.appendParagraph("📄 DocuMail Pro Master Template Canvas");
     titleParagraph.setHeading(DocumentApp.ParagraphHeading.HEADING1);
     
-    var descParagraph = body.appendParagraph("\nPlease use the menu item to start designing your automation layout:\n\n👉 Go to: DocuMail Pro > Start Dynamic Doc Template");
+    var descParagraph = body.appendParagraph("\n👉 Go to: DocuMail Pro > Initialize DocuMail PRO Template\n\nThis will clear the canvas and link sheet headers and a DocuMail PRO Template Engine will open on side, all the headers will be available as Variables.\n\nYou are free to insert any variable, any number of times. You can also use Variables with conditions, like when a variable shall be visible.\n\nMake sure to choose Paragraph Text for Paragraph & Table Row for Table, if using conditional insert");
     descParagraph.setHeading(DocumentApp.ParagraphHeading.NORMAL);
 
     doc.saveAndClose();
@@ -376,6 +417,45 @@ function CREATE_TEMPLATE_IN_BACKGROUND(sheetName, sheetId) {
     
   } catch (e) {
     return { success: false, error: e.message };
+  }
+}
+
+// ==========================================
+// FUNCTION: SET_MASTER_TEMPLATE — One-time setup for the master template file
+// ==========================================
+function SET_MASTER_TEMPLATE() {
+  var ui = SpreadsheetApp.getUi();
+  var result = ui.prompt(
+    '⚙️ Set Master Template',
+    'Enter the file ID of your "DocuMailPro Master Doc Template":\n\n' +
+    'Tip: The file ID is the long string in the URL after /d/ and before /edit\n\n' +
+    'Leave empty and press OK to auto-detect by name.',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+
+  var input = result.getResponseText().trim();
+  var props = PropertiesService.getDocumentProperties();
+
+  if (input) {
+    // Verify the ID is valid
+    try {
+      var file = DriveApp.getFileById(input);
+      props.setProperty('DOCUMAIL_MASTER_TEMPLATE_ID', input);
+      ui.alert('✅ Master template set successfully!\n\nFile: ' + file.getName());
+    } catch (e) {
+      ui.alert('❌ Invalid file ID. Please check and try again.\n\nError: ' + e.message);
+    }
+  } else {
+    // Auto-detect by name
+    var files = DriveApp.getFilesByName("DocuMailPro Master Doc Template");
+    if (files.hasNext()) {
+      var file = files.next();
+      props.setProperty('DOCUMAIL_MASTER_TEMPLATE_ID', file.getId());
+      ui.alert('✅ Auto-detected and set!\n\nFile: ' + file.getName());
+    } else {
+      ui.alert('❌ No file named "DocuMailPro Master Doc Template" found in your Drive.');
+    }
   }
 }
 
@@ -955,6 +1035,12 @@ if ((template.type === "PDF_ONLY" || template.type === "BOTH") && result !== "NO
       html += '<div style="background: #e6f4ea; padding: 16px; border-radius: 6px; margin: 12px 0; border-left: 4px solid #137333;">';
       html += '<p style="margin: 0; color: #137333;"><strong>✅ Documents Generated Successfully!</strong></p>';
       html += '<p style="margin: 5px 0;"><strong>Result:</strong> ' + result.replace(/\n/g, '<br>') + '</p>';
+
+      // Add daily quota info
+      var remainingQuota = MailApp.getRemainingDailyQuota();
+      var quotaColor = remainingQuota < 20 ? '#e37400' : '#137333';
+      html += '<p style="margin: 8px 0 0 0; color: ' + quotaColor + ';"><strong>📊 Daily Email Quota Remaining:</strong> ' + remainingQuota + ' emails</p>';
+
       html += '</div>';
       
       // File links section - MATCHES PREVIEW STYLE

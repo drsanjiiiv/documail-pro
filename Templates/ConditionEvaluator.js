@@ -16,6 +16,11 @@ function evaluateCondition(varValue, operator, targetValue) {
   var currentVal = varValue !== undefined && varValue !== null ? String(varValue).trim() : "";
   var criteriaVal = targetValue !== undefined && targetValue !== null ? String(targetValue).trim() : "";
 
+  if (operator === 'empty' || operator === 'notempty') {
+    if (operator === 'empty') return currentVal === "";
+    if (operator === 'notempty') return currentVal !== "";
+  }
+
   // If both values represent numerical quantities, cast them to true floats for perfect math calculations
   var isNumeric = !isNaN(currentVal) && !isNaN(criteriaVal) && currentVal !== "" && criteriaVal !== "";
   
@@ -142,37 +147,48 @@ function processConditionalBlocks(body, rowDataMap) {
       
       Logger.log("processConditionalBlocks: Found conditional block: " + conditionExpression);
       
-      // Parse the condition expression
-      // Handles patterns like: "Deepak == 'Sandeep'" or "{NAME} == 'Sandeep'"
-      var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
-      var syntaxMatch = syntaxRegex.exec(conditionExpression);
-      
       var conditionMet = false;
       
-      if (syntaxMatch) {
-        var leftSide = syntaxMatch[1].trim();
-        var operator = syntaxMatch[2].trim();
-        var targetValue = syntaxMatch[3].trim();
-        
-        Logger.log("processConditionalBlocks: Parsed - leftSide: '" + leftSide + "', operator: '" + operator + "', targetValue: '" + targetValue + "'");
-        
-        // The left side might be:
-        // 1. A raw value like "Deepak" (already replaced by engine.gs)
-        // 2. A variable placeholder like "{NAME}" (if replacement didn't happen)
-        var liveValue = leftSide;
-        
-        // If it still looks like a variable placeholder, try to get it from rowDataMap directly
-        if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
-          var varName = leftSide.slice(1, -1);
-          liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                     String(rowDataMap[varName]) : leftSide;
-          Logger.log("processConditionalBlocks: Resolved placeholder to: '" + liveValue + "'");
-        }
-        
-        conditionMet = evaluateCondition(liveValue, operator, targetValue);
-        Logger.log("processConditionalBlocks: Condition result: " + conditionMet);
+      // Check for empty/notempty operators (no target value)
+      var emptyMatch = conditionExpression.match(/^\s*\{([^}]+)\}\s+(empty|notempty)\s*$/i);
+      if (emptyMatch) {
+        var varName = emptyMatch[1];
+        var operator = emptyMatch[2].toLowerCase();
+        var liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
+                       String(rowDataMap[varName]) : "";
+        conditionMet = evaluateCondition(liveValue, operator, "");
+        Logger.log("processConditionalBlocks: empty/notempty - var='" + varName + "', op='" + operator + "', value='" + liveValue + "', result=" + conditionMet);
       } else {
-        Logger.log("processConditionalBlocks: Could not parse condition expression: " + conditionExpression);
+        // Parse the condition expression
+        // Handles patterns like: "Deepak == 'Sandeep'" or "{NAME} == 'Sandeep'"
+        var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
+        var syntaxMatch = syntaxRegex.exec(conditionExpression);
+        
+        if (syntaxMatch) {
+          var leftSide = syntaxMatch[1].trim();
+          var operator = syntaxMatch[2].trim();
+          var targetValue = syntaxMatch[3].trim();
+          
+          Logger.log("processConditionalBlocks: Parsed - leftSide: '" + leftSide + "', operator: '" + operator + "', targetValue: '" + targetValue + "'");
+          
+          // The left side might be:
+          // 1. A raw value like "Deepak" (already replaced by engine.gs)
+          // 2. A variable placeholder like "{NAME}" (if replacement didn't happen)
+          var liveValue = leftSide;
+          
+          // If it still looks like a variable placeholder, try to get it from rowDataMap directly
+          if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
+            var varName = leftSide.slice(1, -1);
+            liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
+                       String(rowDataMap[varName]) : leftSide;
+            Logger.log("processConditionalBlocks: Resolved placeholder to: '" + liveValue + "'");
+          }
+          
+          conditionMet = evaluateCondition(liveValue, operator, targetValue);
+          Logger.log("processConditionalBlocks: Condition result: " + conditionMet);
+        } else {
+          Logger.log("processConditionalBlocks: Could not parse condition expression: " + conditionExpression);
+        }
       }
       
       if (conditionMet) {
@@ -260,27 +276,37 @@ function processConditionalTableRows(body, rowDataMap) {
         if (conditionMatch) {
           var conditionExpression = conditionMatch[1].trim();
           
-          // Parse the condition
-          var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
-          var syntaxMatch = syntaxRegex.exec(conditionExpression);
-          
           var conditionMet = false;
           
-          if (syntaxMatch) {
-            var leftSide = syntaxMatch[1].trim();
-            var operator = syntaxMatch[2].trim();
-            var targetValue = syntaxMatch[3].trim();
+          // Check for empty/notempty operators (no target value)
+          var emptyMatch = conditionExpression.match(/^\s*\{([^}]+)\}\s+(empty|notempty)\s*$/i);
+          if (emptyMatch) {
+            var varName = emptyMatch[1];
+            var operator = emptyMatch[2].toLowerCase();
+            var liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
+                           String(rowDataMap[varName]) : "";
+            conditionMet = evaluateCondition(liveValue, operator, "");
+          } else {
+            // Parse the condition
+            var syntaxRegex = /([^=!><=contains'\s]+(?:[^=!><=contains']*[^=!><=contains'\s])?)\s*([=!><=contains]+)\s*['"“‘]([^'"”’]+)['"”’]/i;
+            var syntaxMatch = syntaxRegex.exec(conditionExpression);
             
-            var liveValue = leftSide;
-            
-            // If it's a variable placeholder, resolve it
-            if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
-              var varName = leftSide.slice(1, -1);
-              liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
-                         String(rowDataMap[varName]) : leftSide;
+            if (syntaxMatch) {
+              var leftSide = syntaxMatch[1].trim();
+              var operator = syntaxMatch[2].trim();
+              var targetValue = syntaxMatch[3].trim();
+              
+              var liveValue = leftSide;
+              
+              // If it's a variable placeholder, resolve it
+              if (leftSide.startsWith('{') && leftSide.endsWith('}')) {
+                var varName = leftSide.slice(1, -1);
+                liveValue = rowDataMap && rowDataMap.hasOwnProperty(varName) ? 
+                           String(rowDataMap[varName]) : leftSide;
+              }
+              
+              conditionMet = evaluateCondition(liveValue, operator, targetValue);
             }
-            
-            conditionMet = evaluateCondition(liveValue, operator, targetValue);
           }
           
           // If condition is false, mark this row for removal
